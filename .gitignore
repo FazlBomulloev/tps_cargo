@@ -1,0 +1,36 @@
+# Python
+.env
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+data/
+logs/
+*.xlsx
+
+# Backend
+backend/data/
+backend/.env
+backend/__pycache__/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# Playwright MCP
+.playwright-mcp/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Screenshots / temp
+*.png

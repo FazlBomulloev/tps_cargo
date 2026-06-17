@@ -1,0 +1,18 @@
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+# Список Telegram ID администраторов бота. Расширять прямо здесь —
+# это сознательно не вынесено в env, чтобы менять одной правкой кода.
+ADMIN_IDS: list[int] = [620293106]
+CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME", "").strip()
+CHANNEL_URL = os.getenv("CHANNEL_URL", "").strip()
+
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+if not DATABASE_URL:
+    DB_PATH = Path("backend/data/cargo_tps.db")
+    DATABASE_URL = f"sqlite+aiosqlite:///{DB_PATH}"
