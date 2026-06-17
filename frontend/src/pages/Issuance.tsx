@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
-import { Alert, Card, Input, Button, Table, Radio, message, Typography, Space, Statistic, List, InputNumber, Steps, Skeleton } from "antd";
-import { SearchOutlined, ShoppingCartOutlined } from "@ant-design/icons";
+import { Alert, Card, Input, Button, Table, Radio, message, Typography, Space, Statistic, List, InputNumber, Steps, Skeleton, Tooltip } from "antd";
+import { SearchOutlined, ShoppingCartOutlined, EditOutlined } from "@ant-design/icons";
 import { searchClients } from "../api/clients";
 import { getParcels } from "../api/parcels";
 import { getActiveTariffs } from "../api/tariffs";
@@ -158,7 +158,11 @@ export default function Issuance() {
       render: (v: "avia" | "truck") => <MethodTag method={v} />,
     },
     {
-      title: "Сумма",
+      title: (
+        <Tooltip title="Кликни по сумме, чтобы изменить">
+          <span>Сумма <EditOutlined style={{ fontSize: 11, opacity: 0.6, marginLeft: 4 }} /></span>
+        </Tooltip>
+      ),
       render: (_: any, r: any) => {
         const isCustom = r.id in customPrices;
         const amount = isCustom ? customPrices[r.id] : calcAmount(r);
@@ -168,37 +172,47 @@ export default function Issuance() {
               autoFocus
               size="small"
               min={0}
+              step={0.01}
               value={amount}
               onChange={(v) => {
                 if (v != null) setCustomPrices({ ...customPrices, [r.id]: Number(v) });
               }}
               onBlur={() => setEditingPrice(null)}
               onPressEnter={() => setEditingPrice(null)}
-              style={{ width: 110 }}
+              style={{ width: 120 }}
+              addonAfter="TJS"
             />
           );
         }
         return (
-          <Space>
-            <span
-              onClick={() => setEditingPrice(r.id)}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontVariantNumeric: "tabular-nums",
-                cursor: "pointer",
-                padding: "2px 6px",
-                borderRadius: 4,
-                background: isCustom ? "var(--c-warning-soft)" : "transparent",
-                color: isCustom ? "var(--c-warning)" : "var(--c-text)",
-              }}
-              title="Кликни, чтобы изменить"
-            >
-              {amount.toFixed(2)} TJS
-            </span>
+          <Space size={4}>
+            <Tooltip title="Кликни, чтобы изменить">
+              <span
+                onClick={() => setEditingPrice(r.id)}
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontVariantNumeric: "tabular-nums",
+                  cursor: "pointer",
+                  padding: "2px 8px",
+                  borderRadius: 4,
+                  background: isCustom ? "var(--c-warning-soft)" : "transparent",
+                  color: isCustom ? "var(--c-warning)" : "var(--c-text)",
+                  borderBottom: isCustom ? "none" : "1px dashed var(--c-text-muted)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                {amount.toFixed(2)} TJS
+                <EditOutlined style={{ fontSize: 10, opacity: 0.5 }} />
+              </span>
+            </Tooltip>
             {isCustom && (
-              <Button size="small" type="link" onClick={() => handleResetPrice(r.id)}>
-                Сбросить цену
-              </Button>
+              <Tooltip title="Вернуть расчётную цену по тарифу">
+                <Button size="small" type="link" onClick={() => handleResetPrice(r.id)} style={{ padding: "0 4px" }}>
+                  Сбросить
+                </Button>
+              </Tooltip>
             )}
           </Space>
         );
