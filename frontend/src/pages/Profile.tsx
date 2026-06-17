@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { Card, Form, Input, Button, message, Typography, Avatar, Upload, Divider } from "antd";
 import type { UploadProps } from "antd";
 import { UserOutlined, CameraOutlined, SaveOutlined } from "@ant-design/icons";
@@ -10,7 +10,7 @@ export default function Profile() {
   const { user, setAuth } = useAuth();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
-  const [avatarLoading, setAvatarLoading] = useState(false);
+  const [, setAvatarLoading] = useState(false);
   const token = localStorage.getItem("token") || "";
 
   const refreshUser = async () => {

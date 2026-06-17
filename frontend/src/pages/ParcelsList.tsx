@@ -6,7 +6,7 @@ import type { Dayjs } from "dayjs";
 import { getAllParcels, deleteDushanbeParcel, deleteChinaParcel } from "../api/parcels";
 import { useAuthStore } from "../store/authStore";
 import type { ParcelStatus, DeliveryMethod } from "../types/api";
-import { PageHeader, StatusTag, MethodTag, TrackChip, MoneyCell, WeightCell } from "../components/ui";
+import { PageHeader, StatusTag, MethodTag, TrackChip, WeightCell } from "../components/ui";
 import { formatDateTimeRu } from "../utils/format";
 
 const statusLabels: Record<string, string> = {

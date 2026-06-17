@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Card, Descriptions, Table, Button, Space, Skeleton } from "antd";
+import { Card, Descriptions, Table, Button, Skeleton } from "antd";
 import { ArrowLeftOutlined } from "@ant-design/icons";
 import { getClient } from "../api/clients";
 import { getParcels } from "../api/parcels";

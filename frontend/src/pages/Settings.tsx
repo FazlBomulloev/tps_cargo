@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Card, Input, Button, message, Typography, Space } from "antd";
+import { Card, Input, Button, message, Typography } from "antd";
 import { SaveOutlined, DollarOutlined, CustomerServiceOutlined } from "@ant-design/icons";
 import { getSettings, updateSetting } from "../api/settings";
 
@@ -13,7 +13,11 @@ export default function Settings() {
   const [loading, setLoading] = useState<string | null>(null);
 
   useEffect(() => {
-    getSettings().then((r) => setValues(r.data));
+    getSettings().then((r) => {
+      const map: Record<string, string> = {};
+      for (const s of r.data) map[s.key] = s.value ?? "";
+      setValues(map);
+    });
   }, []);
 
   const handleSave = async (key: string) => {

@@ -1,15 +1,7 @@
 import { create } from "zustand";
+import type { StaffUser } from "../types/api";
 
-export interface StaffUser {
-  id: number;
-  full_name: string;
-  login: string;
-  role: "owner" | "admin_china" | "admin_dushanbe";
-  avatar_url: string | null;
-  permissions: string[];
-  warehouse_id: number | null;
-  is_active: boolean;
-}
+export type { StaffUser };
 
 interface AuthState {
   token: string | null;

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Table, Select, Typography, Space, Card, Tag } from "antd";
+import { Table, Select, Typography, Card, Tag } from "antd";
 import { getAuditLogs } from "../api/audit";
 import { formatDateTimeRu } from "../utils/format";
 

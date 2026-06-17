@@ -1,5 +1,5 @@
 import api from "./client";
-import type { DeliveryMethod, Expense } from "../types/api";
+import type { DeliveryMethod, Expense, Money } from "../types/api";
 
 export interface GetExpensesParams {
   page?: number;
@@ -10,8 +10,14 @@ export interface GetExpensesParams {
   [key: string]: unknown;
 }
 
+export interface ExpensesListResponse {
+  items: Expense[];
+  total: number;
+  total_sum: Money;
+}
+
 export const getExpenses = (params?: GetExpensesParams) =>
-  api.get<Expense[]>("/expenses", { params });
+  api.get<ExpensesListResponse>("/expenses", { params });
 
 export const createExpense = (data: {
   amount: number;

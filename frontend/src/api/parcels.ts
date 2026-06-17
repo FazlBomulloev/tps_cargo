@@ -66,8 +66,15 @@ export const getChinaParcels = (params?: GetChinaParcelsParams) =>
 export const addChinaParcel = (track_id: string) =>
   api.post<ParcelChina>("/parcels/china", { track_id });
 
+export interface ChinaBulkResult {
+  added: number;
+  total: number;
+  duplicates?: number;
+  items?: ParcelChina[];
+}
+
 export const addChinaBulk = (track_ids: string[]) =>
-  api.post<ParcelChina[]>("/parcels/china/bulk", { track_ids });
+  api.post<ChinaBulkResult>("/parcels/china/bulk", { track_ids });
 
 export const getAllParcels = (params?: GetAllParcelsParams) =>
   api.get<Paginated<ParcelDushanbe>>("/parcels/all", { params });
@@ -75,8 +82,15 @@ export const getAllParcels = (params?: GetAllParcelsParams) =>
 export const addDushanbeParcel = (data: AddDushanbeParcelData) =>
   api.post<ParcelDushanbe>("/parcels/dushanbe", data);
 
+export interface DushanbeBulkResult {
+  added: number;
+  unresolved: number;
+  duplicates: number;
+  items?: ParcelDushanbe[];
+}
+
 export const addDushanbeBulk = (data: AddDushanbeBulkData) =>
-  api.post<ParcelDushanbe[]>("/parcels/dushanbe/bulk", data);
+  api.post<DushanbeBulkResult>("/parcels/dushanbe/bulk", data);
 
 export const getParcels = (params?: GetParcelsParams) =>
   api.get<Paginated<ParcelDushanbe>>("/parcels", { params });

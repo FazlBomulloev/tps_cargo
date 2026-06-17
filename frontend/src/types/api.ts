@@ -60,6 +60,8 @@ export interface ParcelDushanbe {
   id: number;
   track_id: string;
   client_id: number;
+  client_name?: string | null;
+  tps_code?: string | null;
   status: ParcelStatus;
   weight_kg: Weight;
   volume_m3: Volume | null;

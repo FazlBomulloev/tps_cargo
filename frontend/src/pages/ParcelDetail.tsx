@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Card, Descriptions, Tag, Select, Button, message, Space, Skeleton } from "antd";
+import { Card, Descriptions, Tag, Select, Button, message, Skeleton } from "antd";
 import { ArrowLeftOutlined } from "@ant-design/icons";
 import { getParcel, updateParcelStatus } from "../api/parcels";
 import type { ParcelStatus } from "../types/api";
@@ -29,7 +29,7 @@ export default function ParcelDetail() {
 
   const handleStatusChange = async () => {
     try {
-      await updateParcelStatus(+id!, newStatus);
+      await updateParcelStatus(+id!, newStatus as ParcelStatus);
       const { data } = await getParcel(+id!);
       setParcel(data);
       message.success("Статус обновлён");
