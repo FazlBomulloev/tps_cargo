@@ -1,15 +1,18 @@
-"""add issuance comment and custom_price (no-op, kept for chain integrity)
+"""add issuance_items.custom_price (comment column already in initial)
 
 Revision ID: ccec0dee8aac
 Revises: 7488a0137a83
 Create Date: 2026-06-12 15:14:09.535875
 
-Originally added `issuance_orders.comment` and `issuance_items.custom_price`,
-but the rewritten initial schema (7488a0137a83) already includes both
-columns. This migration is now a no-op; it stays in the chain so existing
-prod databases that already have it stamped don't break.
+Originally added both `issuance_orders.comment` and
+`issuance_items.custom_price`. The rewritten initial schema
+(7488a0137a83) already includes `comment`, so only `custom_price`
+needs adding here.
 """
 from typing import Sequence, Union
+
+import sqlalchemy as sa
+from alembic import op
 
 
 revision: str = "ccec0dee8aac"
@@ -19,8 +22,11 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    pass
+    op.add_column(
+        "issuance_items",
+        sa.Column("custom_price", sa.Numeric(precision=10, scale=2), nullable=True),
+    )
 
 
 def downgrade() -> None:
-    pass
+    op.drop_column("issuance_items", "custom_price")
