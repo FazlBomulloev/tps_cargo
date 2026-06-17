@@ -24,13 +24,7 @@ services:
       timeout: 3s
       retries: 10
     logging: *default-logging
-    cpus: "2.0"
-    mem_limit: 2g
-    deploy:
-      resources:
-        limits:
-          cpus: "2.0"
-          memory: 2G
+    mem_limit: 512m
 
   redis:
     image: redis:7-alpine
@@ -46,13 +40,7 @@ services:
       timeout: 3s
       retries: 5
     logging: *default-logging
-    cpus: "0.5"
-    mem_limit: 320m
-    deploy:
-      resources:
-        limits:
-          cpus: "0.5"
-          memory: 320M
+    mem_limit: 256m
 
   api:
     build: ./backend
@@ -81,13 +69,7 @@ services:
       timeout: 5s
       retries: 3
     logging: *default-logging
-    cpus: "1.5"
-    mem_limit: 1g
-    deploy:
-      resources:
-        limits:
-          cpus: "1.5"
-          memory: 1G
+    mem_limit: 512m
 
   bot:
     build: .
@@ -107,13 +89,7 @@ services:
       redis:
         condition: service_healthy
     logging: *default-logging
-    cpus: "1.0"
-    mem_limit: 512m
-    deploy:
-      resources:
-        limits:
-          cpus: "1.0"
-          memory: 512M
+    mem_limit: 256m
 
   frontend:
     build: ./frontend
@@ -123,13 +99,7 @@ services:
     depends_on:
       - api
     logging: *default-logging
-    cpus: "0.5"
-    mem_limit: 256m
-    deploy:
-      resources:
-        limits:
-          cpus: "0.5"
-          memory: 256M
+    mem_limit: 128m
 
 volumes:
   pgdata:
