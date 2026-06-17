@@ -1,5 +1,7 @@
+from typing import Annotated
+
 from pydantic import field_validator, model_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, NoDecode
 
 _DEFAULT_JWT_SECRET_KEY = "change-me-in-production"
 _DEFAULT_API_BOT_SECRET = "shared-secret-for-bot-to-api"
@@ -29,12 +31,14 @@ class Settings(BaseSettings):
     OWNER_PASSWORD: str = "change-me"
     OWNER_FULL_NAME: str = "Owner"
 
-    CORS_ORIGINS: list[str] = ["http://localhost:3000"]
+    # NoDecode disables pydantic-settings' default JSON parsing for
+    # list-typed env vars so plain comma-separated strings work.
+    CORS_ORIGINS: Annotated[list[str], NoDecode] = ["http://localhost:3000"]
 
     # IPs of reverse proxies/load balancers allowed to set X-Forwarded-For.
     # Empty by default — X-Forwarded-For is ignored unless the direct
     # connection comes from one of these (otherwise it's spoofable).
-    TRUSTED_PROXIES: list[str] = []
+    TRUSTED_PROXIES: Annotated[list[str], NoDecode] = []
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
