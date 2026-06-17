@@ -6,6 +6,6 @@ __pycache__
 .mypy_cache
 .ruff_cache
 data/
-seed_*.py
+# seed_*.py kept — needed for `docker compose exec api python seed_demo.py`
 .env
 *.md
