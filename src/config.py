@@ -1,3 +1,4 @@
+import logging
 import os
 from pathlib import Path
 
@@ -5,12 +6,20 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+log = logging.getLogger(__name__)
+
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-# Список Telegram ID администраторов бота. Расширять прямо здесь —
-# это сознательно не вынесено в env, чтобы менять одной правкой кода.
-ADMIN_IDS: list[int] = [620293106]
+
+ADMIN_IDS: list[int] = [
+    int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip().isdigit()
+]
+if not ADMIN_IDS:
+    log.warning("ADMIN_IDS пуст. Админ-команды будут недоступны.")
+
 CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME", "").strip()
 CHANNEL_URL = os.getenv("CHANNEL_URL", "").strip()
+
+REDIS_URL = os.getenv("REDIS_URL", "").strip()
 
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 if not DATABASE_URL:

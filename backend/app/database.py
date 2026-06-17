@@ -10,6 +10,8 @@ from sqlalchemy.orm import DeclarativeBase
 from app.config import settings
 
 engine = create_async_engine(settings.database_url_resolved, echo=False)
+# expire_on_commit=False: ORM objects keep attributes after commit.
+# Use db.refresh(obj) explicitly when freshness matters.
 async_session = async_sessionmaker(engine, expire_on_commit=False)
 
 

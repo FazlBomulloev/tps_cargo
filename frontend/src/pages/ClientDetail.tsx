@@ -1,43 +1,50 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Card, Descriptions, Tag, Table, Button, Typography, Space } from "antd";
+import { Card, Descriptions, Table, Button, Space, Skeleton } from "antd";
 import { ArrowLeftOutlined } from "@ant-design/icons";
 import { getClient } from "../api/clients";
 import { getParcels } from "../api/parcels";
-import { fmtKg } from "../utils/format";
+import type { ParcelStatus, DeliveryMethod } from "../types/api";
+import { PageHeader, StatusTag, MethodTag, TrackChip, MoneyCell, WeightCell, EmptyState } from "../components/ui";
 
 export default function ClientDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [client, setClient] = useState<any>(null);
   const [parcels, setParcels] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const load = async () => {
-    const { data: c } = await getClient(+id!);
-    setClient(c);
-    const { data: p } = await getParcels({ client_id: c.id, per_page: 100 });
-    setParcels(p.items || []);
+    setLoading(true);
+    try {
+      const { data: c } = await getClient(+id!);
+      setClient(c);
+      const { data: p } = await getParcels({ client_id: c.id, per_page: 100 });
+      setParcels(p.items || []);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { if (id) load(); }, [id]);
 
-  if (!client) return null;
+  if (loading) return <Skeleton active />;
+  if (!client) return <EmptyState title="Клиент не найден" />;
 
   return (
     <>
-      <div className="page-header">
-        <Space>
+      <PageHeader
+        title={`Клиент ${client.tps_code}`}
+        actions={
           <Button
             type="text"
             icon={<ArrowLeftOutlined />}
             onClick={() => navigate(-1)}
+            aria-label="Назад"
             style={{ borderRadius: 10 }}
           />
-          <Typography.Title className="page-title" level={3}>
-            Клиент {client.tps_code}
-          </Typography.Title>
-        </Space>
-      </div>
+        }
+      />
 
       <div className="stagger-children">
         <Card className="hover-card" style={{ marginBottom: 20 }}>
@@ -69,41 +76,23 @@ export default function ClientDetail() {
               {
                 title: "Трек",
                 dataIndex: "track_id",
-                render: (v: string) => (
-                  <span style={{ fontFamily: "monospace", fontWeight: 500 }}>{v}</span>
-                ),
+                render: (v: string) => <TrackChip value={v} />,
               },
               {
                 title: "Статус",
                 dataIndex: "status",
-                render: (v: string) => {
-                  const colors: Record<string, string> = {
-                    received_dushanbe: "processing",
-                    issued: "success",
-                  };
-                  const labels: Record<string, string> = {
-                    received_dushanbe: "В Душанбе",
-                    issued: "Получена",
-                  };
-                  return <Tag color={colors[v] || "default"} style={{ borderRadius: 20 }}>{labels[v] || v}</Tag>;
-                },
+                render: (v: ParcelStatus) => <StatusTag status={v} />,
               },
-              { title: "Вес", dataIndex: "weight_kg", render: (v: number) => fmtKg(v) },
+              { title: "Вес", dataIndex: "weight_kg", render: (v: number) => <WeightCell value={v} /> },
               {
                 title: "Метод",
                 dataIndex: "delivery_method",
-                render: (v: string) => (
-                  <Tag color={v === "avia" ? "blue" : "orange"} style={{ borderRadius: 20 }}>
-                    {v === "avia" ? "Авиа" : "Фура"}
-                  </Tag>
-                ),
+                render: (v: DeliveryMethod) => <MethodTag method={v} />,
               },
               {
                 title: "Сумма",
                 dataIndex: "amount_due",
-                render: (v: number) => v ? (
-                  <span style={{ fontWeight: 600, color: "#00A76F" }}>{v} TJS</span>
-                ) : "—",
+                render: (v: number) => (v ? <MoneyCell value={v} /> : "—"),
               },
               { title: "Дата", dataIndex: "created_at", render: (v: string) => v?.slice(0, 10) },
             ]}

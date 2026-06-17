@@ -26,7 +26,10 @@ async def list_unresolved(
 ):
     result = await db.execute(
         select(UnresolvedParcel)
-        .where(UnresolvedParcel.resolved == False)
+        .where(
+            UnresolvedParcel.resolved == False,
+            UnresolvedParcel.is_deleted == False,
+        )
         .order_by(UnresolvedParcel.created_at.desc())
     )
     return result.scalars().all()
@@ -84,9 +87,9 @@ async def delete_unresolved(
     current_user: StaffUser = Depends(require_role("admin_dushanbe", "owner")),
 ):
     unresolved = await db.get(UnresolvedParcel, item_id)
-    if not unresolved:
+    if not unresolved or unresolved.is_deleted:
         raise HTTPException(status_code=404, detail="Not found")
-    unresolved.resolved = True
+    unresolved.is_deleted = True
     await log_action(
         db, staff_id=current_user.id, action="delete_unresolved",
         entity_type="unresolved", entity_id=item_id,

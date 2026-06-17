@@ -1,14 +1,16 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Card, Col, DatePicker, Popover, Row, Select, Table, Typography } from "antd";
+import axios from "axios";
+import { Alert, Button, Card, Col, DatePicker, Popover, Row, Select, Table } from "antd";
 import {
   SendOutlined,
+  CarOutlined,
   InboxOutlined,
   WalletOutlined,
   UserAddOutlined,
-  ArrowUpOutlined,
-  ArrowDownOutlined,
   DatabaseOutlined,
+  ExclamationCircleFilled,
+  ClockCircleOutlined,
 } from "@ant-design/icons";
 import {
   getOverview,
@@ -17,10 +19,48 @@ import {
   getParcelsByDay,
   getRevenue,
 } from "../api/stats";
-import { Line, Column } from "@ant-design/charts";
 import dayjs from "dayjs";
+import type { ReactNode } from "react";
+import { StatCard, MoneyCell, WeightCell, PageHeader } from "../components/ui";
+import { LazyChartFallback } from "../components/LazyChartFallback";
+
+const Line = lazy(() =>
+  import("@ant-design/charts").then((m) => ({ default: m.Line }))
+);
+const Column = lazy(() =>
+  import("@ant-design/charts").then((m) => ({ default: m.Column }))
+);
 
 const { RangePicker } = DatePicker;
+
+const fmtMoney = (n: number) =>
+  `${n.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TJS`;
+const fmtKg = (n: number) =>
+  n >= 1000 ? `${(n / 1000).toFixed(2)} т` : `${n.toFixed(1)} кг`;
+
+function methodBreakdown(
+  data: Record<string, number> | undefined,
+  fmt: (n: number) => string,
+) {
+  return (
+    <div style={{ minWidth: 140 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <SendOutlined style={{ fontSize: 12, color: "var(--c-text-muted)" }} />
+          Авиа
+        </span>
+        <b>{fmt(data?.avia ?? 0)}</b>
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 16, marginTop: 4 }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <CarOutlined style={{ fontSize: 12, color: "var(--c-text-muted)" }} />
+          Фура
+        </span>
+        <b>{fmt(data?.truck ?? 0)}</b>
+      </div>
+    </div>
+  );
+}
 
 export default function Dashboard() {
   const [period, setPeriod] = useState("30d");
@@ -30,74 +70,96 @@ export default function Dashboard() {
   const [stuck, setStuck] = useState<any[]>([]);
   const [parcelsByDay, setParcelsByDay] = useState<any[]>([]);
   const [revenue, setRevenue] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadCounter, setReloadCounter] = useState(0);
+
+  const retry = useCallback(() => {
+    setError(null);
+    setReloadCounter((c) => c + 1);
+  }, []);
 
   useEffect(() => {
     if (period === "custom" && !customRange) return;
     const fromDate = period === "custom" && customRange ? customRange[0].format("YYYY-MM-DD") : undefined;
     const toDate = period === "custom" && customRange ? customRange[1].format("YYYY-MM-DD") : undefined;
-    getOverview(period, fromDate, toDate).then((r) => setOverview(r.data)).catch(() => {});
-    getTopClients(period, fromDate, toDate).then((r) => setTopClients(r.data)).catch(() => {});
-    getStuckParcels(period, fromDate, toDate).then((r) => setStuck(r.data)).catch(() => {});
-    getParcelsByDay(period, fromDate, toDate).then((r) => setParcelsByDay(Array.isArray(r.data) ? r.data : [])).catch(() => {});
-    getRevenue(period, fromDate, toDate).then((r) => setRevenue(Array.isArray(r.data) ? r.data : [])).catch(() => {});
-  }, [period, customRange]);
+    let cancelled = false;
+    setError(null);
+    Promise.all([
+      getOverview(period, fromDate, toDate),
+      getTopClients(period, fromDate, toDate),
+      getStuckParcels(period, fromDate, toDate),
+      getParcelsByDay(period, fromDate, toDate),
+      getRevenue(period, fromDate, toDate),
+    ])
+      .then(([o, tc, st, pbd, rv]) => {
+        if (cancelled) return;
+        setOverview(o.data);
+        setTopClients(tc.data);
+        setStuck(st.data);
+        setParcelsByDay(Array.isArray(pbd.data) ? pbd.data : []);
+        setRevenue(Array.isArray(rv.data) ? rv.data : []);
+      })
+      .catch((err) => {
+        if (cancelled || axios.isCancel(err)) return;
+        setError("Не удалось загрузить статистику");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [period, customRange, reloadCounter]);
 
-  // Тултип-разбивка по способу доставки (авиа/фура).
-  const methodBreakdown = (
-    data: Record<string, number> | undefined,
-    fmt: (n: number) => string,
-  ) => (
-    <div style={{ minWidth: 140 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
-        <span>✈️ Авиа</span>
-        <b>{fmt(data?.avia ?? 0)}</b>
-      </div>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 16, marginTop: 4 }}>
-        <span>🚛 Фура</span>
-        <b>{fmt(data?.truck ?? 0)}</b>
-      </div>
-    </div>
-  );
-  const fmtMoney = (n: number) =>
-    `${n.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TJS`;
-  const fmtKg = (n: number) =>
-    n >= 1000 ? `${(n / 1000).toFixed(2)} т` : `${n.toFixed(1)} кг`;
-
-  const stats = [
+  const stats: Array<{
+    title: string;
+    value: ReactNode;
+    caption?: string;
+    icon: ReactNode;
+    accent: "primary" | "warning" | "error" | "info" | "neutral";
+    link?: string;
+    popoverTitle?: string;
+    popover?: ReactNode;
+  }> = useMemo(() => [
     {
       title: "Посылок в Китае",
       value: overview.china_count ?? 0,
-      icon: <SendOutlined style={{ fontSize: 28 }} />,
-      className: "stat-card stat-card-green",
-      color: "#1B5E20",
-      bg: "linear-gradient(135deg, #E8F5E9 0%, #C8E6C9 100%)",
+      icon: <SendOutlined />,
+      accent: "primary",
       link: "/parcels?status=in_china",
     },
     {
       title: "Активные в Душанбе",
       value: overview.dushanbe_count ?? 0,
-      icon: <InboxOutlined style={{ fontSize: 28 }} />,
-      className: "stat-card stat-card-blue",
-      color: "#0D47A1",
-      bg: "linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%)",
+      icon: <InboxOutlined />,
+      accent: "neutral",
       link: "/parcels?status=dushanbe",
     },
     {
       title: "Добавлено за период",
       value: overview.added_count ?? 0,
-      icon: <InboxOutlined style={{ fontSize: 28 }} />,
-      className: "stat-card stat-card-indigo",
-      color: "#283593",
-      bg: "linear-gradient(135deg, #E8EAF6 0%, #C5CAE9 100%)",
+      icon: <InboxOutlined />,
+      accent: "neutral",
       popoverTitle: "По складам",
       popover: (
         <div style={{ minWidth: 160 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
-            <span>🇨🇳 Китай</span>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center" }}>
+            <span style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              fontWeight: 600,
+              background: "var(--c-primary-soft)",
+              padding: "1px 6px",
+              borderRadius: 4,
+            }}>CN</span>
             <b>{overview.china_added ?? 0}</b>
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 16, marginTop: 4 }}>
-            <span>🇹🇯 Душанбе</span>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 16, marginTop: 4, alignItems: "center" }}>
+            <span style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              fontWeight: 600,
+              background: "var(--c-primary-soft)",
+              padding: "1px 6px",
+              borderRadius: 4,
+            }}>TJ</span>
             <b>{overview.dushanbe_added ?? 0}</b>
           </div>
         </div>
@@ -105,34 +167,28 @@ export default function Dashboard() {
     },
     {
       title: "Выручка",
-      value: fmtMoney(overview.revenue ?? 0),
-      icon: <WalletOutlined style={{ fontSize: 28 }} />,
-      className: "stat-card stat-card-orange",
-      color: "#E65100",
-      bg: "linear-gradient(135deg, #FFF3E0 0%, #FFE0B2 100%)",
+      value: <MoneyCell value={overview.revenue ?? 0} />,
+      icon: <WalletOutlined />,
+      accent: "primary",
       popover: methodBreakdown(overview.revenue_by_method, fmtMoney),
     },
     {
       title: "Общий вес",
-      value: fmtKg(overview.total_weight ?? 0),
-      icon: <DatabaseOutlined style={{ fontSize: 28 }} />,
-      className: "stat-card stat-card-teal",
-      color: "#006064",
-      bg: "linear-gradient(135deg, #E0F2F1 0%, #B2DFDB 100%)",
+      value: <WeightCell value={overview.total_weight ?? 0} />,
+      icon: <DatabaseOutlined />,
+      accent: "neutral",
       popover: methodBreakdown(overview.weight_by_method, fmtKg),
     },
     {
       title: "Новых клиентов",
       value: overview.new_clients ?? 0,
-      icon: <UserAddOutlined style={{ fontSize: 28 }} />,
-      className: "stat-card stat-card-purple",
-      color: "#4A148C",
-      bg: "linear-gradient(135deg, #F3E5F5 0%, #E1BEE7 100%)",
+      icon: <UserAddOutlined />,
+      accent: "neutral",
       link: "/clients",
     },
-  ];
+  ], [overview]);
 
-  const lineConfig = {
+  const lineConfig = useMemo(() => ({
     data: parcelsByDay,
     xField: "date",
     yField: "count",
@@ -163,9 +219,9 @@ export default function Dashboard() {
         value: datum.count,
       }),
     },
-  };
+  }), [parcelsByDay]);
 
-  const columnConfig = {
+  const columnConfig = useMemo(() => ({
     data: revenue,
     xField: "period",
     yField: "amount",
@@ -180,138 +236,87 @@ export default function Dashboard() {
         value: `${datum.amount} TJS`,
       }),
     },
-  };
+  }), [revenue]);
 
   return (
     <>
-      <div className="page-header">
-        <Typography.Title className="page-title" level={3}>
-          Дашборд
-        </Typography.Title>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <Select
-            value={period}
-            onChange={(v) => { setPeriod(v); if (v !== "custom") setCustomRange(null); }}
-            style={{ width: 180 }}
-            options={[
-              { value: "today", label: "Сегодня" },
-              { value: "7d", label: "7 дней" },
-              { value: "30d", label: "30 дней" },
-              { value: "90d", label: "90 дней" },
-              { value: "all", label: "За всё время" },
-              { value: "custom", label: "Свой диапазон" },
-            ]}
-          />
-          {period === "custom" && (
-            <RangePicker
-              value={customRange}
-              onChange={(dates) => setCustomRange(dates as [dayjs.Dayjs, dayjs.Dayjs] | null)}
-              format="DD.MM.YYYY"
-              style={{ borderRadius: 8 }}
+      <PageHeader
+        title="Дашборд"
+        actions={
+          <>
+            <Select
+              value={period}
+              onChange={(v) => { setPeriod(v); if (v !== "custom") setCustomRange(null); }}
+              style={{ width: 180 }}
+              options={[
+                { value: "today", label: "Сегодня" },
+                { value: "7d", label: "7 дней" },
+                { value: "30d", label: "30 дней" },
+                { value: "90d", label: "90 дней" },
+                { value: "all", label: "За всё время" },
+                { value: "custom", label: "Свой диапазон" },
+              ]}
             />
-          )}
-        </div>
-      </div>
+            {period === "custom" && (
+              <RangePicker
+                value={customRange}
+                onChange={(dates) => setCustomRange(dates as [dayjs.Dayjs, dayjs.Dayjs] | null)}
+                format="DD.MM.YYYY"
+                style={{ borderRadius: 8 }}
+              />
+            )}
+          </>
+        }
+      />
+
+      {error && (
+        <Alert
+          type="error"
+          message={error}
+          closable
+          onClose={() => setError(null)}
+          action={
+            <Button size="small" type="primary" onClick={retry}>
+              Повторить
+            </Button>
+          }
+          style={{ marginBottom: 16 }}
+        />
+      )}
 
       <Row gutter={[20, 20]} className="stagger-children">
         {stats.map((s, i) => {
-          const interactive = !!(s.link || s.popover);
           const card = (
-            <div
-              className={s.className}
-              style={{
-                padding: "24px",
-                borderRadius: 16,
-                background: s.bg,
-                position: "relative",
-                overflow: "hidden",
-                cursor: interactive ? "pointer" : "default",
-              }}
-            >
-              <div
-                style={{
-                  position: "absolute",
-                  top: -20,
-                  right: -20,
-                  width: 120,
-                  height: 120,
-                  borderRadius: "50%",
-                  background: s.color,
-                  opacity: 0.08,
-                }}
-              />
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "flex-start",
-                  marginBottom: 16,
-                  position: "relative",
-                }}
-              >
-                <div
-                  style={{
-                    width: 48,
-                    height: 48,
-                    borderRadius: 12,
-                    background: s.color,
-                    opacity: 0.12,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <span
-                    style={{
-                      position: "absolute",
-                      color: s.color,
-                    }}
-                  >
-                    {s.icon}
-                  </span>
-                </div>
-              </div>
-              <div
-                style={{
-                  fontSize: 32,
-                  fontWeight: 700,
-                  color: s.color,
-                  lineHeight: 1.2,
-                  marginBottom: 4,
-                  position: "relative",
-                }}
-              >
-                {s.value}
-              </div>
-              <div
-                style={{
-                  fontSize: 14,
-                  color: s.color,
-                  opacity: 0.72,
-                  fontWeight: 500,
-                  position: "relative",
-                }}
-              >
-                {s.title}
-              </div>
-            </div>
+            <StatCard
+              title={s.title}
+              value={s.value}
+              caption={s.caption}
+              icon={s.icon}
+              accent={s.accent}
+              href={s.link}
+            />
           );
-          const wrapped = s.popover ? (
-            <Popover content={s.popover} title={s.popoverTitle || "По способу доставки"}>
-              {card}
-            </Popover>
-          ) : s.link ? (
-            <Link
-              to={s.link}
-              style={{ textDecoration: "none", display: "block" }}
-            >
-              {card}
-            </Link>
-          ) : (
-            card
-          );
+          let wrapped: ReactNode = card;
+          if (s.link) {
+            wrapped = (
+              <Link
+                to={s.link}
+                aria-label={`Перейти к разделу: ${s.title}. Значение: ${typeof s.value === "number" ? s.value : ""}`}
+                style={{ textDecoration: "none", color: "inherit", display: "block", height: "100%" }}
+              >
+                {card}
+              </Link>
+            );
+          }
+          if (s.popover) {
+            wrapped = (
+              <Popover content={s.popover} title={s.popoverTitle} trigger="hover" placement="bottom">
+                <div role="button" tabIndex={0}>{wrapped}</div>
+              </Popover>
+            );
+          }
           return (
-            <Col xs={12} sm={12} lg={6} key={i}>
+            <Col xs={24} sm={12} md={8} xl={8} key={i}>
               {wrapped}
             </Col>
           );
@@ -328,9 +333,10 @@ export default function Dashboard() {
                 </span>
               }
               className="animate-fade-in-up hover-card"
-              style={{ animationDelay: "0.3s" }}
             >
-              <Line {...(lineConfig as any)} />
+              <Suspense fallback={<LazyChartFallback height={300} />}>
+                <Line {...(lineConfig as any)} />
+              </Suspense>
             </Card>
           )}
           {parcelsByDay.length === 0 && revenue.length === 0 && null}
@@ -344,9 +350,10 @@ export default function Dashboard() {
                 </span>
               }
               className="animate-fade-in-up hover-card"
-              style={{ animationDelay: "0.4s" }}
             >
-              <Column {...(columnConfig as any)} />
+              <Suspense fallback={<LazyChartFallback height={300} />}>
+                <Column {...(columnConfig as any)} />
+              </Suspense>
             </Card>
           </Col>
         )}
@@ -361,7 +368,6 @@ export default function Dashboard() {
               </span>
             }
             className="animate-fade-in-up hover-card"
-            style={{ animationDelay: "0.5s" }}
           >
             <Table
               dataSource={topClients}
@@ -383,11 +389,7 @@ export default function Dashboard() {
                 {
                   title: "Сумма",
                   dataIndex: "total_amount",
-                  render: (v: number) => (
-                    <span style={{ fontWeight: 600 }}>
-                      {v?.toFixed(2) ?? "0.00"} TJS
-                    </span>
-                  ),
+                  render: (v: number) => <MoneyCell value={v ?? 0} />,
                 },
               ]}
             />
@@ -401,7 +403,6 @@ export default function Dashboard() {
               </span>
             }
             className="animate-fade-in-up hover-card"
-            style={{ animationDelay: "0.6s" }}
             extra={
               stuck.length > 0 && (
                 <span
@@ -443,10 +444,14 @@ export default function Dashboard() {
                   render: (v: number) => (
                     <span
                       style={{
-                        color: v > 21 ? "#FF5630" : "#FFAB00",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        color: v > 21 ? "var(--c-error)" : "var(--c-warning)",
                         fontWeight: 600,
                       }}
                     >
+                      {v > 21 ? <ExclamationCircleFilled /> : <ClockCircleOutlined />}
                       {v}
                     </span>
                   ),

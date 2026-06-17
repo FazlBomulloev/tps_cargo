@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 
 class ParcelChinaCreate(BaseModel):
@@ -31,6 +31,18 @@ class ParcelDushanbeCreate(BaseModel):
     comment: str | None = None
     shelf: str | None = None
 
+    @model_validator(mode="after")
+    def _validate_truck_volume(self):
+        # Для truck тариф считается как max(byKg, byM3). Без объёма
+        # byM3 всегда 0, и итог молча падает до byKg — недосчёт денег.
+        if self.delivery_method == "truck" and (
+            self.volume_m3 is None or self.volume_m3 <= 0
+        ):
+            raise ValueError(
+                "volume_m3 обязателен и должен быть > 0 для delivery_method='truck'"
+            )
+        return self
+
 
 class ParcelDushanbeBulk(BaseModel):
     """Групповая приёмка в Душанбе: один клиент (TPS) и общие
@@ -43,6 +55,16 @@ class ParcelDushanbeBulk(BaseModel):
     volume_m3: Decimal | None = None
     comment: str | None = None
     shelf: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_truck_volume(self):
+        if self.delivery_method == "truck" and (
+            self.volume_m3 is None or self.volume_m3 <= 0
+        ):
+            raise ValueError(
+                "volume_m3 обязателен и должен быть > 0 для delivery_method='truck'"
+            )
+        return self
 
 
 class ParcelDushanbeResponse(BaseModel):

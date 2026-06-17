@@ -10,7 +10,7 @@ from app.models.parcel_dushanbe import ParcelDushanbe
 from app.models.staff import StaffUser
 from app.schemas.client import ClientRegister, ClientResponse, ClientUpdate
 from app.services.audit_service import log_action
-from app.utils.tps_code import generate_tps_code
+from app.utils.tps_code import create_client_with_tps_code
 from app.utils.track_normalize import normalize_track
 from app.api.deps import get_client_ip, require_role, verify_bot_secret
 
@@ -24,17 +24,17 @@ async def register_client(body: ClientRegister, db: AsyncSession = Depends(get_d
     )
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Client already registered")
-    tps_code = await generate_tps_code(db)
-    client = Client(
-        telegram_id=body.telegram_id,
-        tps_code=tps_code,
-        full_name=body.full_name,
-        phone=body.phone,
-        address=body.address,
-        lang=body.lang,
+    client = await create_client_with_tps_code(
+        db,
+        lambda tps_code: Client(
+            telegram_id=body.telegram_id,
+            tps_code=tps_code,
+            full_name=body.full_name,
+            phone=body.phone,
+            address=body.address,
+            lang=body.lang,
+        ),
     )
-    db.add(client)
-    await db.commit()
     await db.refresh(client)
     return client
 
@@ -74,6 +74,7 @@ async def list_clients(
     query = select(Client).where(Client.status != "deleted")
     if q:
         q_upper = q.strip().upper()
+        # Uses gin_trgm_ops indexes ix_clients_*_trgm
         query = query.where(
             or_(
                 Client.tps_code.ilike(f"%{q}%"),
@@ -103,6 +104,7 @@ async def search_clients(
     # пользовательский ввод приводим к тому же виду — иначе пробелы,
     # тире и регистр ломают ilike.
     norm = normalize_track(q)
+    # Uses gin_trgm_ops indexes ix_clients_*_trgm
     conditions = [
         Client.tps_code.ilike(f"%{q}%"),
         Client.phone.ilike(f"%{q}%"),

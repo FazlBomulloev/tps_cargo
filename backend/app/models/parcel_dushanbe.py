@@ -12,7 +12,8 @@ from sqlalchemy import (
     Text,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
@@ -33,7 +34,11 @@ class ParcelDushanbe(Base):
         Integer, ForeignKey("warehouses.id"), nullable=True
     )
     amount_due: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    # IN-25: старое поле — только price_per_kg, оставлено для совместимости.
     tariff_snapshot: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    # Новое поле: полный снапшот тарифа {"kg": ..., "m3": ..., "currency": ...}.
+    # Приоритет над tariff_snapshot, fallback на старое поле для старых записей.
+    tariff_snapshot_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     has_china_registration: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
@@ -53,10 +58,15 @@ class ParcelDushanbe(Base):
         Integer, ForeignKey("staff_users.id"), nullable=True
     )
 
+    client: Mapped["Client"] = relationship("Client", lazy="raise")
+
     __table_args__ = (
         Index("ix_parcels_dushanbe_track_id", "track_id", unique=True),
         Index("ix_parcels_dushanbe_client_id", "client_id"),
         Index("ix_parcels_dushanbe_status", "status"),
         Index("ix_parcels_dushanbe_created_at", "created_at"),
         Index("ix_parcels_dushanbe_delivery_method", "delivery_method"),
+        # Partial index ix_parcels_dushanbe_notified_pending создаётся
+        # сырым SQL в миграции indexes_perf (WHERE notified_at IS NULL
+        # AND is_deleted = false) — Alembic autogenerate его не увидит.
     )

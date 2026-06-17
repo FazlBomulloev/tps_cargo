@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Table, Button, Input, Modal, message, Typography, Tag, Card, Space } from "antd";
+import { Table, Button, Input, Modal, message, Tag, Card, Space, Popconfirm } from "antd";
 import { WarningOutlined, LinkOutlined, DeleteOutlined } from "@ant-design/icons";
 import { getUnresolved, resolveParcel, deleteUnresolved } from "../api/unresolved";
-import { fmtKg } from "../utils/format";
+import type { DeliveryMethod } from "../types/api";
+import { PageHeader, TrackChip, MethodTag, WeightCell, EmptyState } from "../components/ui";
 
 export default function Unresolved() {
   const [items, setItems] = useState<any[]>([]);
@@ -31,37 +32,36 @@ export default function Unresolved() {
 
   return (
     <>
-      <div className="page-header">
-        <Typography.Title className="page-title" level={3}>
-          Неопознанные посылки
-        </Typography.Title>
-        {items.length > 0 && (
-          <Tag
-            color="error"
-            style={{
-              borderRadius: 20,
-              padding: "4px 16px",
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
-            <WarningOutlined /> {items.length} шт.
-          </Tag>
-        )}
-      </div>
+      <PageHeader
+        title="Неопознанные посылки"
+        actions={
+          items.length > 0 && (
+            <Tag
+              color="error"
+              style={{
+                borderRadius: 20,
+                padding: "4px 16px",
+                fontSize: 14,
+                fontWeight: 600,
+              }}
+            >
+              <WarningOutlined /> {items.length} шт.
+            </Tag>
+          )
+        }
+      />
 
       <div className="animate-fade-in-up">
-        <Card bodyStyle={{ padding: 0 }} className="hover-card">
+        <Card styles={{ body: { padding: 0 } }} className="hover-card">
           <Table
             dataSource={items}
             rowKey="id"
+            locale={{ emptyText: <EmptyState title="Все треки опознаны" description="Нет посылок, ожидающих привязки к клиенту" /> }}
             columns={[
               {
                 title: "Трек",
                 dataIndex: "track_id",
-                render: (v: string) => (
-                  <span style={{ fontFamily: "monospace", fontWeight: 600 }}>{v}</span>
-                ),
+                render: (v: string) => <TrackChip value={v} />,
               },
               {
                 title: "TPS (введённый)",
@@ -73,16 +73,12 @@ export default function Unresolved() {
               {
                 title: "Вес",
                 dataIndex: "weight_kg",
-                render: (v: number) => v ? fmtKg(v) : "—",
+                render: (v: number) => (v ? <WeightCell value={v} /> : "—"),
               },
               {
                 title: "Метод",
                 dataIndex: "delivery_method",
-                render: (v: string) => v ? (
-                  <Tag color={v === "avia" ? "blue" : "orange"} style={{ borderRadius: 20 }}>
-                    {v === "avia" ? "Авиа" : "Фура"}
-                  </Tag>
-                ) : "—",
+                render: (v: DeliveryMethod | null) => (v ? <MethodTag method={v} /> : "—"),
               },
               { title: "Дата", dataIndex: "created_at", render: (v: string) => v?.slice(0, 10) },
               {
@@ -99,13 +95,22 @@ export default function Unresolved() {
                     >
                       Привязать
                     </Button>
-                    <Button
-                      size="small"
-                      danger
-                      icon={<DeleteOutlined />}
-                      onClick={() => handleDelete(r.id)}
-                      style={{ borderRadius: 8 }}
-                    />
+                    <Popconfirm
+                      title="Удалить неопознанную посылку?"
+                      description="Действие необратимо."
+                      okText="Удалить"
+                      cancelText="Отмена"
+                      okButtonProps={{ danger: true }}
+                      onConfirm={() => handleDelete(r.id)}
+                    >
+                      <Button
+                        size="small"
+                        danger
+                        icon={<DeleteOutlined />}
+                        aria-label="Удалить неопознанную посылку"
+                        style={{ borderRadius: 8 }}
+                      />
+                    </Popconfirm>
                   </Space>
                 ),
               },

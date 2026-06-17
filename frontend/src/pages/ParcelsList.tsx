@@ -1,18 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Table, Select, Typography, Tag, Space, Card, DatePicker, Statistic, Button, Popconfirm, message, Input } from "antd";
+import { Table, Select, Space, Card, DatePicker, Statistic, Button, Popconfirm, message, Input } from "antd";
 import { DeleteOutlined } from "@ant-design/icons";
 import type { Dayjs } from "dayjs";
 import { getAllParcels, deleteDushanbeParcel, deleteChinaParcel } from "../api/parcels";
 import { useAuthStore } from "../store/authStore";
-import { fmtKg } from "../utils/format";
+import type { ParcelStatus, DeliveryMethod } from "../types/api";
+import { PageHeader, StatusTag, MethodTag, TrackChip, MoneyCell, WeightCell } from "../components/ui";
+import { formatDateTimeRu } from "../utils/format";
 
-const statusColors: Record<string, string> = {
-  in_china: "cyan",
-  received_dushanbe: "processing",
-  issued: "success",
-  unresolved: "warning",
-};
 const statusLabels: Record<string, string> = {
   in_china: "В Китае",
   received_dushanbe: "В Душанбе",
@@ -45,6 +41,8 @@ export default function ParcelsList() {
     user?.role === "owner" ||
     (user?.permissions || []).includes("parcels_delete");
 
+  const [reloadCounter, setReloadCounter] = useState(0);
+
   const handleDelete = async (r: any) => {
     try {
       if (r.status === "in_china") {
@@ -53,85 +51,92 @@ export default function ParcelsList() {
         await deleteDushanbeParcel(r.id);
       }
       message.success("Посылка удалена");
-      load();
+      setReloadCounter((c) => c + 1);
     } catch (e: any) {
       message.error(e.response?.data?.detail || "Ошибка удаления");
     }
   };
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      const params: Record<string, unknown> = { page, per_page: perPage, status };
-      if (search.trim()) params.q = search.trim();
-      if (dateRange) {
-        params.date_from = dateRange[0].startOf("day").toISOString();
-        params.date_to = dateRange[1].endOf("day").toISOString();
-      }
-      const { data: d } = await getAllParcels(params);
-      setData(d);
-    } catch {
-      setData({ items: [], total: 0 });
+  useEffect(() => {
+    let cancelled = false;
+    const params: Record<string, unknown> = { page, per_page: perPage, status };
+    if (search.trim()) params.q = search.trim();
+    if (dateRange) {
+      params.date_from = dateRange[0].startOf("day").toISOString();
+      params.date_to = dateRange[1].endOf("day").toISOString();
     }
-    setLoading(false);
-  };
-
-  useEffect(() => { load(); }, [page, perPage, status, dateRange, search]);
+    setLoading(true);
+    getAllParcels(params)
+      .then(({ data: d }) => {
+        if (!cancelled) setData(d);
+      })
+      .catch(() => {
+        if (!cancelled) setData({ items: [], total: 0 });
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [page, perPage, status, dateRange, search, reloadCounter]);
 
   return (
     <>
-      <div className="page-header">
-        <Typography.Title className="page-title" level={3}>
-          Все посылки
-        </Typography.Title>
-        <Space wrap>
-          <Input.Search
-            placeholder="Поиск: ФИО, TPS или трек"
-            allowClear
-            onSearch={(v) => { setSearch(v); setPage(1); }}
-            style={{ width: 260 }}
-          />
-          <Select
-            allowClear
-            placeholder="Статус"
-            style={{ width: 180 }}
-            value={status}
-            onChange={(v) => { setStatus(v); setPage(1); }}
-            options={[
-              ...FILTER_OPTIONS,
-              ...(status === "dushanbe" ? ["dushanbe"] : []),
-            ].map((k) => ({ value: k, label: statusLabels[k] }))}
-          />
-          <DatePicker.RangePicker
-            value={dateRange}
-            onChange={(dates) => {
-              setDateRange(dates as [Dayjs, Dayjs] | null);
-              setPage(1);
-            }}
-            format="DD.MM.YYYY"
-            placeholder={["Дата от", "Дата до"]}
-            style={{ borderRadius: 12 }}
-          />
-          <Select
-            value={perPage}
-            onChange={(v) => { setPerPage(v); setPage(1); }}
-            style={{ width: 110 }}
-            options={[
-              { value: 20, label: "20 / стр" },
-              { value: 50, label: "50 / стр" },
-              { value: 100, label: "100 / стр" },
-              { value: 200, label: "200 / стр" },
-            ]}
-          />
-        </Space>
-      </div>
+      <PageHeader
+        title="Все посылки"
+        actions={
+          <Space wrap>
+            <Input.Search
+              placeholder="Поиск: ФИО, TPS или трек"
+              allowClear
+              onSearch={(v) => { setSearch(v); setPage(1); }}
+              style={{ width: 260 }}
+            />
+            <Select
+              allowClear
+              placeholder="Статус"
+              style={{ width: 180 }}
+              value={status}
+              onChange={(v) => { setStatus(v); setPage(1); }}
+              options={[
+                ...FILTER_OPTIONS,
+                ...(status === "dushanbe" ? ["dushanbe"] : []),
+              ].map((k) => ({ value: k, label: statusLabels[k] }))}
+            />
+            <DatePicker.RangePicker
+              value={dateRange}
+              onChange={(dates) => {
+                setDateRange(dates as [Dayjs, Dayjs] | null);
+                setPage(1);
+              }}
+              format="DD.MM.YYYY"
+              placeholder={["Дата от", "Дата до"]}
+              style={{ borderRadius: 12 }}
+            />
+            <Select
+              value={perPage}
+              onChange={(v) => { setPerPage(v); setPage(1); }}
+              style={{ width: 110 }}
+              options={[
+                { value: 20, label: "20 / стр" },
+                { value: 50, label: "50 / стр" },
+                { value: 100, label: "100 / стр" },
+                { value: 200, label: "200 / стр" },
+              ]}
+            />
+          </Space>
+        }
+      />
 
       <div className="animate-fade-in-up">
-        <Card bodyStyle={{ padding: 0 }} className="hover-card">
+        <Card styles={{ body: { padding: 0 } }} className="hover-card">
           <Table
             loading={loading}
             dataSource={data.items}
             rowKey={(r) => `${r.status === "in_china" ? "c" : "d"}_${r.id}`}
+            virtual={perPage >= 100}
+            scroll={perPage >= 100 ? { y: 600, x: "max-content" } : undefined}
             pagination={{
               current: page,
               total: data.total,
@@ -145,11 +150,11 @@ export default function ParcelsList() {
                 dataIndex: "track_id",
                 render: (v: string, r: any) =>
                   r.status !== "in_china" ? (
-                    <Link to={`/parcels/${r.id}`} style={{ fontFamily: "monospace", fontWeight: 600, color: "#00A76F" }}>
-                      {v}
+                    <Link to={`/parcels/${r.id}`}>
+                      <TrackChip value={v} copyable={false} />
                     </Link>
                   ) : (
-                    <span style={{ fontFamily: "monospace", fontWeight: 600 }}>{v}</span>
+                    <TrackChip value={v} />
                   ),
               },
               {
@@ -169,43 +174,27 @@ export default function ParcelsList() {
                 title: "Статус",
                 dataIndex: "status",
                 width: 140,
-                render: (v: string) => (
-                  <Tag color={statusColors[v] || "default"} style={{ borderRadius: 20, padding: "2px 12px" }}>
-                    {statusLabels[v] || v}
-                  </Tag>
-                ),
+                render: (v: ParcelStatus) => <StatusTag status={v} />,
               },
               {
                 title: "Вес",
                 dataIndex: "weight_kg",
                 width: 90,
                 render: (v: number | null) =>
-                  v != null ? <span style={{ fontWeight: 500 }}>{fmtKg(v)}</span> : <span style={{ color: "#919EAB" }}>—</span>,
+                  v != null ? <WeightCell value={v} /> : <span style={{ color: "#919EAB" }}>—</span>,
               },
               {
                 title: "Метод",
                 dataIndex: "delivery_method",
                 width: 90,
-                render: (v: string | null) =>
-                  v ? (
-                    <Tag color={v === "avia" ? "blue" : "orange"} style={{ borderRadius: 20 }}>
-                      {v === "avia" ? "Авиа" : "Фура"}
-                    </Tag>
-                  ) : (
-                    <span style={{ color: "#919EAB" }}>—</span>
-                  ),
+                render: (v: DeliveryMethod | null) =>
+                  v ? <MethodTag method={v} /> : <span style={{ color: "#919EAB" }}>—</span>,
               },
               {
                 title: "Дата",
                 dataIndex: "created_at",
                 width: 160,
-                render: (v: string) =>
-                  v
-                    ? new Date(v).toLocaleString("ru-RU", {
-                        day: "2-digit", month: "2-digit", year: "numeric",
-                        hour: "2-digit", minute: "2-digit",
-                      })
-                    : "—",
+                render: (v: string) => formatDateTimeRu(v),
               },
               ...(canDelete
                 ? [
@@ -228,6 +217,7 @@ export default function ParcelsList() {
                               danger
                               type="text"
                               icon={<DeleteOutlined />}
+                              aria-label="Удалить посылку"
                             />
                           </Popconfirm>
                         ) : null,

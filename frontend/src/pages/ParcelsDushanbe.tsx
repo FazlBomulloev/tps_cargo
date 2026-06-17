@@ -1,9 +1,13 @@
 import { useEffect, useState } from "react";
-import { Card, Form, Input, InputNumber, Select, Button, message, Typography, Alert, Table, Tag, Segmented, Popconfirm } from "antd";
+import { Card, Form, Input, InputNumber, Select, Button, message, Alert, Table, Tag, Segmented, Popconfirm, Row, Col, Grid } from "antd";
 import { InboxOutlined, DeleteOutlined } from "@ant-design/icons";
 import { addDushanbeParcel, addDushanbeBulk, getParcels, deleteDushanbeParcel } from "../api/parcels";
 import { useAuthStore } from "../store/authStore";
-import { fmtKg } from "../utils/format";
+import { PageHeader, TrackChip, StatusTag, MethodTag, WeightCell } from "../components/ui";
+import type { ParcelStatus, DeliveryMethod } from "../types/api";
+import { formatDateTimeRu } from "../utils/format";
+
+const { useBreakpoint } = Grid;
 
 export default function ParcelsDushanbe() {
   const [form] = Form.useForm();
@@ -21,39 +25,48 @@ export default function ParcelsDushanbe() {
   const canDelete =
     user?.role === "owner" ||
     (user?.permissions || []).includes("parcels_delete");
+  const screens = useBreakpoint();
+  const sticky = !!screens.lg;
+
+  const [reloadCounter, setReloadCounter] = useState(0);
 
   const handleDelete = async (id: number) => {
     try {
       await deleteDushanbeParcel(id);
       message.success("Посылка удалена");
-      loadParcels();
+      setReloadCounter((c) => c + 1);
     } catch (e: any) {
       message.error(e.response?.data?.detail || "Ошибка удаления");
     }
   };
 
-  const loadParcels = async (p = page) => {
+  useEffect(() => {
+    let cancelled = false;
     setTableLoading(true);
-    try {
-      const { data } = await getParcels({
-        page: p,
-        per_page: 20,
-        q: search.trim() || undefined,
+    getParcels({
+      page,
+      per_page: 20,
+      q: search.trim() || undefined,
+    })
+      .then(({ data }) => {
+        if (cancelled) return;
+        setParcels(data.items || []);
+        setTotal(data.total || 0);
+      })
+      .catch(() => {
+        if (!cancelled) message.error("Не удалось загрузить посылки");
+      })
+      .finally(() => {
+        if (!cancelled) setTableLoading(false);
       });
-      setParcels(data.items || []);
-      setTotal(data.total || 0);
-    } catch {
-      // ignore
-    } finally {
-      setTableLoading(false);
-    }
-  };
+    return () => {
+      cancelled = true;
+    };
+  }, [page, search, reloadCounter]);
 
-  useEffect(() => { loadParcels(); }, [page, search]);
-
-  const statusMap: Record<string, { text: string; color: string }> = {
-    received_dushanbe: { text: "Принято", color: "blue" },
-    issued: { text: "Выдано", color: "default" },
+  const triggerReload = () => {
+    if (page !== 1) setPage(1);
+    else setReloadCounter((c) => c + 1);
   };
 
   const onFinish = async (values: any) => {
@@ -67,8 +80,7 @@ export default function ParcelsDushanbe() {
         setResult({ type: "success", message: `Посылка добавлена. Клиент: ${data.client_name}` });
       }
       form.resetFields();
-      loadParcels(1);
-      setPage(1);
+      triggerReload();
     } catch (e: any) {
       message.error(e.response?.data?.detail || "Ошибка");
     } finally {
@@ -101,8 +113,7 @@ export default function ParcelsDushanbe() {
           `${data.unresolved}, дубли ${data.duplicates}`
       );
       bulkForm.resetFields();
-      loadParcels(1);
-      setPage(1);
+      triggerReload();
     } catch (e: any) {
       message.error(e.response?.data?.detail || "Ошибка");
     } finally {
@@ -112,15 +123,12 @@ export default function ParcelsDushanbe() {
 
   return (
     <>
-      <div className="page-header">
-        <Typography.Title className="page-title" level={3}>
-          Склад Душанбе
-        </Typography.Title>
-      </div>
+      <PageHeader title="Приёмка на складе Душанбе" />
 
-      <div className="animate-fade-in-up">
+      <Row gutter={[24, 24]} className="animate-fade-in-up">
+        <Col xs={24} lg={8}>
+          <div style={{ position: sticky ? "sticky" : "static", top: 24 }}>
         <Card
-          style={{ maxWidth: 600 }}
           className="hover-card"
           title={
             <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -234,6 +242,9 @@ export default function ParcelsDushanbe() {
           </Form>
           )}
         </Card>
+          </div>
+        </Col>
+        <Col xs={24} lg={16}>
         <Card
           title={
             <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -244,7 +255,6 @@ export default function ParcelsDushanbe() {
             </span>
           }
           className="hover-card"
-          style={{ marginTop: 20 }}
           extra={
             <Input.Search
               placeholder="Поиск: трек, ФИО или TPS"
@@ -271,43 +281,30 @@ export default function ParcelsDushanbe() {
               {
                 title: "Трек-код",
                 dataIndex: "track_id",
-                render: (v: string) => (
-                  <span style={{ fontFamily: "monospace", fontWeight: 500 }}>{v}</span>
-                ),
+                render: (v: string) => <TrackChip value={v} />,
               },
               {
                 title: "Вес",
                 dataIndex: "weight_kg",
-                render: (v: number) => fmtKg(v),
+                render: (v: number) => <WeightCell value={v} />,
                 width: 100,
               },
               {
                 title: "Метод",
                 dataIndex: "delivery_method",
                 width: 100,
-                render: (v: string) => (
-                  <Tag color={v === "avia" ? "blue" : "orange"} style={{ borderRadius: 20 }}>
-                    {v === "avia" ? "Авиа" : "Фура"}
-                  </Tag>
-                ),
+                render: (v: DeliveryMethod) => <MethodTag method={v} />,
               },
               {
                 title: "Статус",
                 dataIndex: "status",
                 width: 120,
-                render: (v: string) => (
-                  <Tag color={statusMap[v]?.color || "default"} style={{ borderRadius: 20 }}>
-                    {statusMap[v]?.text || v}
-                  </Tag>
-                ),
+                render: (v: ParcelStatus) => <StatusTag status={v} />,
               },
               {
                 title: "Дата",
                 dataIndex: "created_at",
-                render: (v: string) => new Date(v).toLocaleString("ru-RU", {
-                  day: "2-digit", month: "2-digit", year: "numeric",
-                  hour: "2-digit", minute: "2-digit",
-                }),
+                render: (v: string) => formatDateTimeRu(v),
               },
               ...(canDelete
                 ? [
@@ -328,6 +325,7 @@ export default function ParcelsDushanbe() {
                               danger
                               type="text"
                               icon={<DeleteOutlined />}
+                              aria-label="Удалить посылку"
                             />
                           </Popconfirm>
                         ),
@@ -337,7 +335,8 @@ export default function ParcelsDushanbe() {
             ]}
           />
         </Card>
-      </div>
+        </Col>
+      </Row>
     </>
   );
 }

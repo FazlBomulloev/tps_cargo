@@ -1,9 +1,9 @@
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import inspect, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
@@ -26,7 +26,15 @@ from src.models import (
 
 log = logging.getLogger(__name__)
 
-engine = create_async_engine(DATABASE_URL, echo=False)
+_engine_kwargs = {"echo": False}
+if not DATABASE_URL.startswith("sqlite"):
+    _engine_kwargs.update(
+        pool_size=10,
+        max_overflow=20,
+        pool_pre_ping=True,
+        pool_recycle=3600,
+    )
+engine = create_async_engine(DATABASE_URL, **_engine_kwargs)
 async_session = async_sessionmaker(
     engine, expire_on_commit=False,
 )
@@ -36,13 +44,40 @@ RESERVED_NUMBERS = {
 }
 
 
+class ClientStatus:
+    """Канонические значения Client.status (BO-29). Используй вместо
+    голых строк в новом коде; существующие места — см. TODO рядом."""
+    ACTIVE = "active"
+    BLOCKED = "blocked"
+    DELETED = "deleted"
+
+
+def _mask_db_url(url: str) -> str:
+    return re.sub(r"://([^:]+):[^@]+@", r"://\1:***@", url)
+
+
 def normalize_track(value: str) -> str:
+    # Mirror of backend/app/utils/track_normalize.py. Keep in sync manually
+    # until shared package is set up (see BE-023/BO-11/IN-03).
     value = str(value).upper().strip()
     return re.sub(r"[^A-Z0-9]+", "", value)
 
 
 async def init_db():
-    log.info("БД подключена: %s", DATABASE_URL.split("@")[-1] if "@" in DATABASE_URL else DATABASE_URL)
+    """Не создаёт таблицы (это делает backend/alembic) — только
+    проверяет, что схема уже накатана, и логирует цель подключения."""
+    masked = _mask_db_url(DATABASE_URL)
+    async with engine.connect() as conn:
+        def _check(sync_conn):
+            return inspect(sync_conn).has_table("clients")
+        has_clients = await conn.run_sync(_check)
+        if not has_clients:
+            log.error(
+                "Таблицы БД не найдены. Накатите миграции "
+                "(alembic upgrade head) в backend.",
+            )
+            raise RuntimeError("DB not initialized")
+    log.info("БД подключена: %s", masked)
 
 
 # ── TPS code generation ──
@@ -91,10 +126,12 @@ async def get_broadcast_recipients() -> list[int]:
     Исключаем status='deleted'; заблокированные остаются —
     их Telegram-аккаунт сам отвергнет сообщение, и счётчик
     fail на стороне рассылки это учтёт."""
+    # TODO(BO-29): заменить строковый литерал на ClientStatus.DELETED
+    # по всей базе кода, когда будет общий проход по статусам.
     async with async_session() as s:
         result = await s.execute(
             select(Client.telegram_id).where(
-                Client.status != "deleted",
+                Client.status != ClientStatus.DELETED,
             )
         )
         return [tid for (tid,) in result.all() if tid]
@@ -233,7 +270,9 @@ async def find_in_unresolved(track: str) -> bool:
 async def get_unresolved_info(track: str) -> dict | None:
     """Детали неопознанной посылки (уже в Душанбе) по треку:
     дата Китая, дата прибытия, вес, ориентировочная цена.
-    None — если трека нет среди неразобранных."""
+    None — если трека нет среди неразобранных.
+    # TODO: merge with get_parcels_by_client (BO-48) — большая часть
+    # логики (china_at/тариф/оценка суммы) повторяется."""
     code = normalize_track(track)
     async with async_session() as s:
         u = (await s.execute(
@@ -410,6 +449,7 @@ async def get_unnotified_parcels() -> list[dict]:
             )).scalar_one_or_none()
             if client:
                 items.append({
+                    "id": p.id,
                     "track_id": p.track_id,
                     "telegram_id": client.telegram_id,
                     "lang": client.lang or "ru",
@@ -417,17 +457,19 @@ async def get_unnotified_parcels() -> list[dict]:
         return items
 
 
-async def mark_notified(track_id: str):
-    code = normalize_track(track_id)
+async def mark_notified(parcel_id: int):
+    """Помечает посылку уведомлённой по primary key (а не track_id),
+    чтобы не зависеть от soft-delete/уникальности трека (BO-005)."""
     async with async_session() as s:
         result = await s.execute(
             select(ParcelDushanbe).where(
-                ParcelDushanbe.track_id == code
+                ParcelDushanbe.id == parcel_id,
+                ParcelDushanbe.is_deleted.is_(False),
             )
         )
         parcel = result.scalar_one_or_none()
         if parcel:
-            parcel.notified_at = datetime.utcnow()
+            parcel.notified_at = datetime.now(timezone.utc)
             await s.commit()
 
 

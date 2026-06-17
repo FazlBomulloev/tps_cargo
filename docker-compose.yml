@@ -1,22 +1,58 @@
 version: "3.9"
 
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: cargo_tps
-      POSTGRES_USER: cargo
-      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: ${POSTGRES_DB:-cargo_tps}
+      POSTGRES_USER: ${POSTGRES_USER:-cargo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U cargo -d cargo_tps"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cargo} -d ${POSTGRES_DB:-cargo_tps}"]
       interval: 5s
       timeout: 3s
       retries: 10
+    logging: *default-logging
+    cpus: "2.0"
+    mem_limit: 2g
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    expose:
+      - "6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging: *default-logging
+    cpus: "0.5"
+    mem_limit: 320m
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 320M
 
   api:
     build: ./backend
@@ -24,7 +60,7 @@ services:
     expose:
       - "8000"
     environment:
-      DATABASE_URL: "postgresql+asyncpg://cargo:secret@postgres:5432/cargo_tps"
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-cargo}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-cargo_tps}"
       JWT_SECRET_KEY: "${JWT_SECRET_KEY}"
       BOT_TOKEN: "${BOT_TOKEN}"
       CHANNEL_USERNAME: "${CHANNEL_USERNAME}"
@@ -33,34 +69,69 @@ services:
       OWNER_LOGIN: "${OWNER_LOGIN}"
       OWNER_PASSWORD: "${OWNER_PASSWORD}"
       OWNER_FULL_NAME: "${OWNER_FULL_NAME}"
+      CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:3000}"
     volumes:
       - api_data:/app/data
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: *default-logging
+    cpus: "1.5"
+    mem_limit: 1g
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 1G
 
   bot:
     build: .
     restart: unless-stopped
+    env_file: .env
     environment:
-      DATABASE_URL: "postgresql+asyncpg://cargo:secret@postgres:5432/cargo_tps"
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-cargo}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-cargo_tps}"
       BOT_TOKEN: "${BOT_TOKEN}"
       CHANNEL_USERNAME: "${CHANNEL_USERNAME}"
       CHANNEL_URL: "${CHANNEL_URL}"
+      REDIS_URL: "${REDIS_URL:-redis://redis:6379/0}"
     depends_on:
       postgres:
         condition: service_healthy
       api:
-        condition: service_started
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    logging: *default-logging
+    cpus: "1.0"
+    mem_limit: 512m
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
 
   frontend:
     build: ./frontend
     restart: unless-stopped
     ports:
-      - "3000:80"
+      - "3000:8080"
     depends_on:
       - api
+    logging: *default-logging
+    cpus: "0.5"
+    mem_limit: 256m
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
 
 volumes:
   pgdata:
   api_data:
+  redis_data:

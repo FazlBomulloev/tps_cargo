@@ -1,10 +1,11 @@
 import math
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.database import get_db
 from app.models.client import Client
@@ -37,8 +38,18 @@ async def create_issuance(
 
     custom_map = body.custom_prices or {}
 
+    # Блокируем строки посылок на время транзакции (row-level lock),
+    # чтобы два параллельных запроса на одну и ту же посылку не могли
+    # оба пройти проверку статуса и создать дублирующую выдачу.
+    locked_parcels = (await db.execute(
+        select(ParcelDushanbe)
+        .where(ParcelDushanbe.id.in_(body.parcel_ids))
+        .with_for_update()
+    )).scalars().all()
+    parcels_by_id = {p.id: p for p in locked_parcels}
+
     for pid in body.parcel_ids:
-        parcel = await db.get(ParcelDushanbe, pid)
+        parcel = parcels_by_id.get(pid)
         if not parcel or parcel.is_deleted:
             raise HTTPException(
                 status_code=404,
@@ -70,7 +81,18 @@ async def create_issuance(
 
         custom = custom_map.get(parcel.id)
         if custom is not None:
-            amount = Decimal(custom)
+            try:
+                amount = Decimal(custom)
+            except (InvalidOperation, TypeError, ValueError):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Некорректная custom_price для посылки {parcel.id}",
+                )
+            if amount < 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"custom_price для посылки {parcel.id} не может быть отрицательной",
+                )
         elif parcel.delivery_method == "avia":
             amount = parcel.weight_kg * tariff.price_per_kg
         else:
@@ -85,7 +107,15 @@ async def create_issuance(
 
         parcel.status = "issued"
         parcel.amount_due = amount
+        # IN-25: tariff_snapshot хранит только price_per_kg (legacy).
+        # tariff_snapshot_data — полный снапшот {kg, m3, currency},
+        # нужен для truck (price_per_m3 теряется в старом поле).
         parcel.tariff_snapshot = tariff.price_per_kg
+        parcel.tariff_snapshot_data = {
+            "kg": str(tariff.price_per_kg),
+            "m3": str(tariff.price_per_m3) if tariff.price_per_m3 is not None else None,
+            "currency": tariff.currency,
+        }
 
         total_weight += parcel.weight_kg
         total_amount += amount
@@ -120,6 +150,7 @@ async def create_issuance(
             tariff_applied=d["tariff"].price_per_kg,
             custom_price=d["custom_price"],
             amount=d["amount"],
+            tariff_snapshot_data=p.tariff_snapshot_data,
         )
         db.add(item)
         items.append(item)
@@ -225,25 +256,22 @@ async def list_issuance(
     )).scalar() or 0
     pages = max(1, math.ceil(total / per_page))
     result = await db.execute(
-        query.order_by(IssuanceOrder.issued_at.desc())
+        query.options(
+            joinedload(IssuanceOrder.client),
+            joinedload(IssuanceOrder.items).joinedload(IssuanceItem.parcel),
+        )
+        .order_by(IssuanceOrder.issued_at.desc())
         .offset((page - 1) * per_page)
         .limit(per_page)
     )
-    orders = result.scalars().all()
+    orders = result.unique().scalars().all()
     items_out = []
     for order in orders:
-        order_items = (await db.execute(
-            select(IssuanceItem).where(
-                IssuanceItem.issuance_order_id
-                == order.id,
-            )
-        )).scalars().all()
-        client = await db.get(Client, order.client_id)
+        client = order.client
         item_responses = []
-        for i in order_items:
+        for i in order.items:
             ir = IssuanceItemResponse.model_validate(i)
-            parcel = await db.get(ParcelDushanbe, i.parcel_id)
-            ir.track_id = parcel.track_id if parcel else None
+            ir.track_id = i.parcel.track_id if i.parcel else None
             item_responses.append(ir)
         items_out.append(IssuanceResponse(
             id=order.id,
@@ -274,18 +302,21 @@ async def get_issuance(
     db: AsyncSession = Depends(get_db),
     current_user: StaffUser = Depends(require_role("admin_dushanbe", "owner")),
 ):
-    order = await db.get(IssuanceOrder, order_id)
+    order = (await db.execute(
+        select(IssuanceOrder)
+        .options(
+            joinedload(IssuanceOrder.client),
+            joinedload(IssuanceOrder.items).joinedload(IssuanceItem.parcel),
+        )
+        .where(IssuanceOrder.id == order_id)
+    )).unique().scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Issuance order not found")
-    order_items = (await db.execute(
-        select(IssuanceItem).where(IssuanceItem.issuance_order_id == order.id)
-    )).scalars().all()
-    client = await db.get(Client, order.client_id)
+    client = order.client
     item_responses = []
-    for i in order_items:
+    for i in order.items:
         ir = IssuanceItemResponse.model_validate(i)
-        parcel = await db.get(ParcelDushanbe, i.parcel_id)
-        ir.track_id = parcel.track_id if parcel else None
+        ir.track_id = i.parcel.track_id if i.parcel else None
         item_responses.append(ir)
     return IssuanceResponse(
         id=order.id,

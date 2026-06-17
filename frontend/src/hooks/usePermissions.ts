@@ -3,7 +3,7 @@ import { hasAccess } from "../utils/permissions";
 
 export function usePermissions() {
   const { user } = useAuth();
-  const role = user?.role ?? "admin_china";
+  const role = user?.role ?? null;
   const permissions = user?.permissions ?? [];
   return {
     can: (page: string) => hasAccess(page, role, permissions),

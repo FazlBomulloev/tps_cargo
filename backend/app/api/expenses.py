@@ -73,7 +73,7 @@ async def list_expenses(
     db: AsyncSession = Depends(get_db),
     current_user: StaffUser = Depends(require_permission("expenses")),
 ):
-    query = select(Expense)
+    query = select(Expense).where(Expense.is_deleted.is_(False))
     if category and category in VALID_CATEGORIES:
         query = query.where(Expense.category == category)
     if date_from:
@@ -138,7 +138,7 @@ async def delete_expense(
     current_user: StaffUser = Depends(require_permission("expenses")),
 ):
     expense = await db.get(Expense, expense_id)
-    if not expense:
+    if not expense or expense.is_deleted:
         raise HTTPException(status_code=404, detail="Expense not found")
     await log_action(
         db,
@@ -152,6 +152,8 @@ async def delete_expense(
         },
         ip_address=get_client_ip(request),
     )
-    await db.delete(expense)
+    expense.is_deleted = True
+    expense.deleted_at = func.now()
+    expense.deleted_by = current_user.id
     await db.commit()
     return {"detail": "Expense deleted", "id": expense_id}

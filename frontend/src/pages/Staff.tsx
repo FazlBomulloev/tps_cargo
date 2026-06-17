@@ -1,27 +1,10 @@
 import { useEffect, useState } from "react";
-import { Table, Button, Modal, Form, Input, Select, Tag, message, Typography, Card, Space, Avatar, Checkbox } from "antd";
+import { Table, Button, Modal, Form, Input, Select, Tag, message, Typography, Card, Space, Avatar, Checkbox, Popconfirm } from "antd";
 import { PlusOutlined, KeyOutlined, StopOutlined, SafetyOutlined } from "@ant-design/icons";
 import { getStaff, createStaff, deleteStaff, resetPassword, updatePermissions } from "../api/staff";
-
-const roleLabels: Record<string, string> = { owner: "Владелец", admin_china: "Админ Китай", admin_dushanbe: "Админ Душанбе" };
-const roleColors: Record<string, string> = { owner: "#00A76F", admin_china: "#00B8D9", admin_dushanbe: "#FFAB00" };
-
-const ALL_PERMISSIONS = [
-  { key: "dashboard", label: "Дашборд" },
-  { key: "parcels_china", label: "Склад Китай" },
-  { key: "parcels_dushanbe", label: "Склад Душанбе" },
-  { key: "parcels_list", label: "Все посылки" },
-  { key: "parcels_delete", label: "Удаление посылок" },
-  { key: "issuance", label: "Выдача" },
-  { key: "issuance_history", label: "История выдач" },
-  { key: "clients", label: "Клиенты" },
-  { key: "unresolved", label: "Неопознанные" },
-  { key: "warehouses", label: "Склады" },
-  { key: "tariffs", label: "Тарифы" },
-  { key: "expenses", label: "Расходы" },
-  { key: "settings", label: "Настройки" },
-  { key: "audit", label: "Журнал" },
-];
+import { ALL_PERMISSIONS } from "../utils/permissions";
+import type { PermissionKey } from "../types/api";
+import { ROLE_LABELS, ROLE_COLORS } from "../constants/roles";
 
 export default function Staff() {
   const [items, setItems] = useState<any[]>([]);
@@ -29,7 +12,7 @@ export default function Staff() {
   const [pwModal, setPwModal] = useState<number | null>(null);
   const [newPw, setNewPw] = useState("");
   const [permModal, setPermModal] = useState<any>(null);
-  const [permValues, setPermValues] = useState<string[]>([]);
+  const [permValues, setPermValues] = useState<PermissionKey[]>([]);
   const [form] = Form.useForm();
 
   const load = () => getStaff().then((r) => setItems(r.data));
@@ -92,7 +75,7 @@ export default function Staff() {
       </div>
 
       <div className="animate-fade-in-up">
-        <Card bodyStyle={{ padding: 0 }} className="hover-card">
+        <Card styles={{ body: { padding: 0 } }} className="hover-card">
           <Table
             dataSource={items}
             rowKey="id"
@@ -105,7 +88,7 @@ export default function Staff() {
                       size={36}
                       src={r.avatar_url || undefined}
                       style={{
-                        background: roleColors[r.role] || "#919EAB",
+                        background: ROLE_COLORS[r.role as keyof typeof ROLE_COLORS] || "#919EAB",
                         fontWeight: 600,
                         fontSize: 14,
                       }}
@@ -127,12 +110,12 @@ export default function Staff() {
                     style={{
                       borderRadius: 20,
                       padding: "2px 12px",
-                      background: `${roleColors[v]}16`,
-                      color: roleColors[v],
+                      background: "var(--c-primary-soft)",
+                      color: ROLE_COLORS[v as keyof typeof ROLE_COLORS],
                       fontWeight: 600,
                     }}
                   >
-                    {roleLabels[v] || v}
+                    {ROLE_LABELS[v as keyof typeof ROLE_LABELS] || v}
                   </Tag>
                 ),
               },
@@ -184,15 +167,24 @@ export default function Staff() {
                       Пароль
                     </Button>
                     {r.is_active && r.role !== "owner" && (
-                      <Button
-                        size="small"
-                        danger
-                        icon={<StopOutlined />}
-                        onClick={() => handleDeactivate(r.id)}
-                        style={{ borderRadius: 8 }}
+                      <Popconfirm
+                        title="Деактивировать сотрудника?"
+                        description={`У сотрудника «${r.full_name}» больше не будет доступа к системе.`}
+                        okText="Деактивировать"
+                        cancelText="Отмена"
+                        okButtonProps={{ danger: true }}
+                        onConfirm={() => handleDeactivate(r.id)}
                       >
-                        Деактивировать
-                      </Button>
+                        <Button
+                          size="small"
+                          danger
+                          icon={<StopOutlined />}
+                          aria-label="Деактивировать сотрудника"
+                          style={{ borderRadius: 8 }}
+                        >
+                          Деактивировать
+                        </Button>
+                      </Popconfirm>
                     )}
                   </Space>
                 ),
@@ -262,7 +254,7 @@ export default function Staff() {
         <div style={{ marginTop: 16 }}>
           <Checkbox.Group
             value={permValues}
-            onChange={(vals) => setPermValues(vals as string[])}
+            onChange={(vals) => setPermValues(vals as PermissionKey[])}
             style={{ display: "flex", flexDirection: "column", gap: 12 }}
           >
             {ALL_PERMISSIONS.map((p) => (

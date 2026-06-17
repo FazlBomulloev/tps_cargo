@@ -7,7 +7,7 @@ from app.models.staff import StaffUser
 from app.models.tariff import Tariff
 from app.schemas.tariff import TariffCreate, TariffResponse, TariffUpdate
 from app.services.audit_service import log_action
-from app.api.deps import get_client_ip, require_role
+from app.api.deps import get_client_ip, get_current_user, require_role
 
 router = APIRouter(prefix="/api/tariffs", tags=["tariffs"])
 
@@ -22,7 +22,10 @@ async def list_tariffs(
 
 
 @router.get("/active", response_model=list[TariffResponse])
-async def active_tariffs(db: AsyncSession = Depends(get_db)):
+async def active_tariffs(
+    db: AsyncSession = Depends(get_db),
+    current_user: StaffUser = Depends(get_current_user),
+):
     result = await db.execute(
         select(Tariff).where(Tariff.is_active == True).order_by(Tariff.method)
     )

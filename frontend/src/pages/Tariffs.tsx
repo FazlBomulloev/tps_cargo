@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import { Table, Button, Modal, Form, InputNumber, Select, Tag, message, Typography, Card } from "antd";
+import { Table, Button, Modal, Form, InputNumber, Select, message, Card } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { getActiveTariffs, createTariff } from "../api/tariffs";
+import type { DeliveryMethod } from "../types/api";
+import { PageHeader, MethodTag, MoneyCell } from "../components/ui";
 
 export default function Tariffs() {
   const [items, setItems] = useState<any[]>([]);
@@ -24,22 +26,22 @@ export default function Tariffs() {
 
   return (
     <>
-      <div className="page-header">
-        <Typography.Title className="page-title" level={3}>
-          Тарифы
-        </Typography.Title>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => { form.resetFields(); setModal(true); }}
-          style={{ borderRadius: 10, height: 44 }}
-        >
-          Новый тариф
-        </Button>
-      </div>
+      <PageHeader
+        title="Тарифы"
+        actions={
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => { form.resetFields(); setModal(true); }}
+            style={{ borderRadius: 10, height: 44 }}
+          >
+            Новый тариф
+          </Button>
+        }
+      />
 
       <div className="animate-fade-in-up">
-        <Card bodyStyle={{ padding: 0 }} className="hover-card">
+        <Card styles={{ body: { padding: 0 } }} className="hover-card">
           <Table
             dataSource={items}
             rowKey="id"
@@ -47,21 +49,17 @@ export default function Tariffs() {
               {
                 title: "Метод",
                 dataIndex: "method",
-                render: (v: string) => (
-                  <Tag color={v === "avia" ? "blue" : "orange"} style={{ borderRadius: 20, padding: "2px 12px" }}>
-                    {v === "avia" ? "Авиа" : "Фура"}
-                  </Tag>
-                ),
+                render: (v: DeliveryMethod) => <MethodTag method={v} />,
               },
               {
                 title: "TJS/кг",
                 dataIndex: "price_per_kg",
-                render: (v: number) => <span style={{ fontWeight: 600 }}>{v} TJS</span>,
+                render: (v: number) => <MoneyCell value={v} />,
               },
               {
                 title: "TJS/м³",
                 dataIndex: "price_per_m3",
-                render: (v: number) => v ? <span style={{ fontWeight: 600 }}>{v} TJS</span> : "—",
+                render: (v: number) => (v ? <MoneyCell value={v} /> : "—"),
               },
               { title: "Валюта", dataIndex: "currency" },
               {

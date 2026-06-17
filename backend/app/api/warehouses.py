@@ -7,13 +7,16 @@ from app.models.staff import StaffUser
 from app.models.warehouse import Warehouse
 from app.schemas.warehouse import WarehouseCreate, WarehouseResponse, WarehouseUpdate
 from app.services.audit_service import log_action
-from app.api.deps import get_client_ip, require_role
+from app.api.deps import get_client_ip, get_current_user, require_role
 
 router = APIRouter(prefix="/api/warehouses", tags=["warehouses"])
 
 
 @router.get("", response_model=list[WarehouseResponse])
-async def list_warehouses(db: AsyncSession = Depends(get_db)):
+async def list_warehouses(
+    db: AsyncSession = Depends(get_db),
+    current_user: StaffUser = Depends(get_current_user),
+):
     result = await db.execute(
         select(Warehouse).where(Warehouse.is_active == True).order_by(Warehouse.id)
     )
@@ -21,7 +24,11 @@ async def list_warehouses(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{wid}", response_model=WarehouseResponse)
-async def get_warehouse(wid: int, db: AsyncSession = Depends(get_db)):
+async def get_warehouse(
+    wid: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: StaffUser = Depends(get_current_user),
+):
     w = await db.get(Warehouse, wid)
     if not w:
         raise HTTPException(status_code=404, detail="Warehouse not found")

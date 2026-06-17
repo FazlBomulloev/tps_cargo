@@ -1,36 +1,96 @@
 import api from "./client";
+import type {
+  DeliveryMethod,
+  ParcelChina,
+  ParcelDushanbe,
+  ParcelStatus,
+  Paginated,
+} from "../types/api";
 
-export const getChinaParcels = (params?: Record<string, unknown>) =>
-  api.get("/parcels/china", { params });
+export interface GetChinaParcelsParams {
+  page?: number;
+  per_page?: number;
+  q?: string;
+  warehouse_id?: number;
+  [key: string]: unknown;
+}
+
+export interface GetAllParcelsParams {
+  page?: number;
+  per_page?: number;
+  q?: string;
+  status?: ParcelStatus;
+  delivery_method?: DeliveryMethod;
+  [key: string]: unknown;
+}
+
+export interface GetParcelsParams {
+  page?: number;
+  per_page?: number;
+  q?: string;
+  status?: ParcelStatus;
+  [key: string]: unknown;
+}
+
+export interface AddDushanbeParcelData {
+  track_id: string;
+  tps_code?: string;
+  weight_kg: number;
+  volume_m3?: number;
+  delivery_method: DeliveryMethod;
+  comment?: string;
+  shelf?: string;
+}
+
+export interface AddDushanbeBulkData {
+  tps_code?: string;
+  track_ids: string[];
+  weight_kg: number;
+  delivery_method: DeliveryMethod;
+  volume_m3?: number;
+  comment?: string;
+  shelf?: string;
+}
+
+export interface UpdateParcelData {
+  weight_kg?: number;
+  volume_m3?: number;
+  delivery_method?: DeliveryMethod;
+  comment?: string;
+  status?: ParcelStatus;
+}
+
+export const getChinaParcels = (params?: GetChinaParcelsParams) =>
+  api.get<Paginated<ParcelChina>>("/parcels/china", { params });
 
 export const addChinaParcel = (track_id: string) =>
-  api.post("/parcels/china", { track_id });
+  api.post<ParcelChina>("/parcels/china", { track_id });
 
 export const addChinaBulk = (track_ids: string[]) =>
-  api.post("/parcels/china/bulk", { track_ids });
+  api.post<ParcelChina[]>("/parcels/china/bulk", { track_ids });
 
-export const getAllParcels = (params?: Record<string, unknown>) =>
-  api.get("/parcels/all", { params });
+export const getAllParcels = (params?: GetAllParcelsParams) =>
+  api.get<Paginated<ParcelDushanbe>>("/parcels/all", { params });
 
-export const addDushanbeParcel = (data: Record<string, unknown>) =>
-  api.post("/parcels/dushanbe", data);
+export const addDushanbeParcel = (data: AddDushanbeParcelData) =>
+  api.post<ParcelDushanbe>("/parcels/dushanbe", data);
 
-export const addDushanbeBulk = (data: Record<string, unknown>) =>
-  api.post("/parcels/dushanbe/bulk", data);
+export const addDushanbeBulk = (data: AddDushanbeBulkData) =>
+  api.post<ParcelDushanbe[]>("/parcels/dushanbe/bulk", data);
 
-export const getParcels = (params?: Record<string, unknown>) =>
-  api.get("/parcels", { params });
+export const getParcels = (params?: GetParcelsParams) =>
+  api.get<Paginated<ParcelDushanbe>>("/parcels", { params });
 
-export const getParcel = (id: number) => api.get(`/parcels/${id}`);
+export const getParcel = (id: number) => api.get<ParcelDushanbe>(`/parcels/${id}`);
 
 export const searchTrack = (track_id: string) =>
-  api.get(`/parcels/track/${track_id}`);
+  api.get<ParcelDushanbe>(`/parcels/track/${track_id}`);
 
-export const updateParcelStatus = (id: number, status: string) =>
-  api.patch(`/parcels/${id}/status`, { status });
+export const updateParcelStatus = (id: number, status: ParcelStatus) =>
+  api.patch<ParcelDushanbe>(`/parcels/${id}/status`, { status });
 
-export const updateParcel = (id: number, data: Record<string, unknown>) =>
-  api.patch(`/parcels/${id}`, data);
+export const updateParcel = (id: number, data: UpdateParcelData) =>
+  api.patch<ParcelDushanbe>(`/parcels/${id}`, data);
 
 export const deleteDushanbeParcel = (id: number) =>
   api.delete(`/parcels/dushanbe/${id}`);

@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
@@ -9,11 +10,39 @@ from app.models.staff import StaffUser
 from app.schemas.staff import PermissionsUpdate, ResetPasswordRequest, StaffCreate, StaffResponse, StaffUpdate
 from app.services.audit_service import log_action
 from app.utils.security import hash_password
-from app.api.deps import get_client_ip, require_role
+from app.api.deps import get_client_ip, get_current_user, require_role
 
 router = APIRouter(prefix="/api/staff", tags=["staff"])
 
 owner_only = require_role("owner")
+
+# Единый источник правды для permissions UI. Должен совпадать с
+# frontend ALL_PERMISSIONS (frontend/src/utils/permissions.ts) и
+# VALID_PERMISSIONS ниже.
+PERMISSIONS_REGISTRY = [
+    {"key": "dashboard", "label": "Дашборд"},
+    {"key": "parcels_china", "label": "Склад Китай"},
+    {"key": "parcels_dushanbe", "label": "Склад Душанбе"},
+    {"key": "parcels_list", "label": "Все посылки"},
+    {"key": "parcels_delete", "label": "Удаление посылок"},
+    {"key": "issuance", "label": "Выдача"},
+    {"key": "issuance_history", "label": "История выдач"},
+    {"key": "clients", "label": "Клиенты"},
+    {"key": "unresolved", "label": "Неопознанные"},
+    {"key": "warehouses", "label": "Склады"},
+    {"key": "tariffs", "label": "Тарифы"},
+    {"key": "expenses", "label": "Расходы"},
+    {"key": "staff", "label": "Сотрудники"},
+    {"key": "settings", "label": "Настройки"},
+    {"key": "audit", "label": "Журнал"},
+]
+
+
+@router.get("/permissions/registry")
+async def get_permissions_registry(
+    current_user: StaffUser = Depends(get_current_user),
+):
+    return {"permissions": PERMISSIONS_REGISTRY}
 
 
 @router.get("")
@@ -141,6 +170,7 @@ async def reset_password(
     if not staff:
         raise HTTPException(status_code=404, detail="Staff not found")
     staff.password_hash = hash_password(body.new_password)
+    staff.password_changed_at = datetime.now(timezone.utc)
     await log_action(
         db,
         staff_id=current_user.id,
@@ -153,13 +183,7 @@ async def reset_password(
     return {"detail": "Password reset successfully"}
 
 
-VALID_PERMISSIONS = [
-    "dashboard", "parcels_china", "parcels_dushanbe", "parcels_list",
-    "issuance", "issuance_history", "clients", "unresolved",
-    "warehouses", "tariffs", "staff", "settings", "audit",
-    "parcels_delete",
-    "expenses",
-]
+VALID_PERMISSIONS = [entry["key"] for entry in PERMISSIONS_REGISTRY]
 
 
 @router.patch("/{staff_id}/permissions")

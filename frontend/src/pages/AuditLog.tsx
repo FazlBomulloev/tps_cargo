@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Table, Select, Typography, Space, Card, Tag } from "antd";
 import { getAuditLogs } from "../api/audit";
+import { formatDateTimeRu } from "../utils/format";
 
 const entityLabels: Record<string, { label: string; color: string }> = {
   parcel: { label: "Посылка", color: "blue" },
@@ -43,13 +44,14 @@ const actionLabels: Record<string, string> = {
 export default function AuditLog() {
   const [data, setData] = useState<any>({ items: [], total: 0 });
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(50);
   const [entityType, setEntityType] = useState<string | undefined>();
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     setLoading(true);
-    getAuditLogs({ page, per_page: 50, entity_type: entityType }).then((r) => { setData(r.data); setLoading(false); });
-  }, [page, entityType]);
+    getAuditLogs({ page, per_page: perPage, entity_type: entityType }).then((r) => { setData(r.data); setLoading(false); });
+  }, [page, perPage, entityType]);
 
   return (
     <>
@@ -68,7 +70,7 @@ export default function AuditLog() {
       </div>
 
       <div className="animate-fade-in-up">
-        <Card bodyStyle={{ padding: 0 }} className="hover-card">
+        <Card styles={{ body: { padding: 0 } }} className="hover-card">
           <Table
             loading={loading}
             dataSource={data.items}
@@ -77,8 +79,11 @@ export default function AuditLog() {
             pagination={{
               current: page,
               total: data.total,
-              pageSize: 50,
+              pageSize: perPage,
+              showSizeChanger: true,
+              pageSizeOptions: ["20", "50", "100"],
               onChange: setPage,
+              onShowSizeChange: (_, size) => setPerPage(size),
               showTotal: (total) => `Всего: ${total}`,
             }}
             columns={[
@@ -114,11 +119,7 @@ export default function AuditLog() {
                 title: "Дата",
                 dataIndex: "created_at",
                 width: 170,
-                render: (v: string) =>
-                  v ? new Date(v).toLocaleString("ru-RU", {
-                    day: "2-digit", month: "2-digit", year: "numeric",
-                    hour: "2-digit", minute: "2-digit",
-                  }) : "—",
+                render: (v: string) => formatDateTimeRu(v),
               },
             ]}
           />

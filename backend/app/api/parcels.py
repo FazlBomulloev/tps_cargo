@@ -4,7 +4,9 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.database import get_db
 from app.models.client import Client
@@ -28,6 +30,7 @@ from app.services.audit_service import log_action
 from app.utils.track_normalize import normalize_track
 from app.api.deps import (
     get_client_ip,
+    get_current_user,
     require_permission,
     require_role,
     verify_bot_secret,
@@ -38,6 +41,18 @@ router = APIRouter(prefix="/api/parcels", tags=["parcels"])
 log = logging.getLogger(__name__)
 
 VALID_STATUSES = {"received_dushanbe", "issued"}
+
+
+def _created_at_sort_key(item: dict):
+    v = item.get("created_at")
+    if not v:
+        return datetime.min
+    if isinstance(v, str):
+        try:
+            return datetime.fromisoformat(v.replace("Z", "+00:00"))
+        except ValueError:
+            return datetime.min
+    return v
 
 
 # ── China ──
@@ -57,7 +72,11 @@ async def add_china(
         raise HTTPException(status_code=409, detail="Track already exists")
     parcel = ParcelChina(track_id=track, created_by=current_user.id)
     db.add(parcel)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Track already exists")
     await log_action(
         db, staff_id=current_user.id, action="create_parcel_china",
         entity_type="parcel", entity_id=parcel.id,
@@ -214,7 +233,14 @@ async def add_dushanbe(
         created_by=current_user.id,
     )
     db.add(parcel)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Трек уже обработан в Душанбе",
+        )
     await log_action(
         db,
         staff_id=current_user.id,
@@ -386,6 +412,7 @@ async def delete_dushanbe(
         ip_address=get_client_ip(request),
     )
     await db.commit()
+    await db.refresh(parcel)
     log.info(
         "Мягкое удаление посылки Душанбе id=%s (трек=%s) "
         "сотрудником id=%s",
@@ -421,6 +448,7 @@ async def delete_china(
         ip_address=get_client_ip(request),
     )
     await db.commit()
+    await db.refresh(parcel)
     log.info(
         "Мягкое удаление посылки Китай id=%s (трек=%s) "
         "сотрудником id=%s",
@@ -448,7 +476,10 @@ async def list_all_parcels(
 
     async def _unresolved_items(db: AsyncSession, query=None):
         if query is None:
-            query = select(UnresolvedParcel).where(UnresolvedParcel.resolved == False)
+            query = select(UnresolvedParcel).where(
+                UnresolvedParcel.resolved == False,
+                UnresolvedParcel.is_deleted == False,
+            )
             if term:
                 uconds = [
                     UnresolvedParcel.raw_tps_code.ilike(f"%{term}%")
@@ -484,10 +515,13 @@ async def list_all_parcels(
                     ParcelDushanbe.track_id.ilike(f"%{norm}%")
                 )
             query = query.where(or_(*dconds))
-        result = await db.execute(query.order_by(ParcelDushanbe.created_at.desc()))
+        result = await db.execute(
+            query.options(joinedload(ParcelDushanbe.client))
+            .order_by(ParcelDushanbe.created_at.desc())
+        )
         items = []
-        for p in result.scalars().all():
-            c = await db.get(Client, p.client_id) if p.client_id else None
+        for p in result.unique().scalars().all():
+            c = p.client
             items.append({
                 "id": p.id, "track_id": p.track_id, "status": p.status,
                 "weight_kg": float(p.weight_kg) if p.weight_kg else None,
@@ -539,9 +573,7 @@ async def list_all_parcels(
             ),
         )
         all_items.extend(await _unresolved_items(db))
-        all_items.sort(
-            key=lambda x: x["created_at"] or "", reverse=True
-        )
+        all_items.sort(key=_created_at_sort_key, reverse=True)
         total = len(all_items)
         pages = max(1, math.ceil(total / per_page))
         start = (page - 1) * per_page
@@ -587,7 +619,7 @@ async def list_all_parcels(
     ))
     all_items.extend(await _unresolved_items(db))
 
-    all_items.sort(key=lambda x: x["created_at"] or "", reverse=True)
+    all_items.sort(key=_created_at_sort_key, reverse=True)
     total = len(all_items)
     pages = max(1, math.ceil(total / per_page))
     start = (page - 1) * per_page
@@ -693,7 +725,11 @@ async def list_parcels(
 
 
 @router.get("/track/{track_id}")
-async def search_by_track(track_id: str, db: AsyncSession = Depends(get_db)):
+async def search_by_track(
+    track_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: StaffUser = Depends(get_current_user),
+):
     track = normalize_track(track_id)
     dushanbe = (await db.execute(
         select(ParcelDushanbe).where(
@@ -707,6 +743,7 @@ async def search_by_track(track_id: str, db: AsyncSession = Depends(get_db)):
         select(UnresolvedParcel).where(
             UnresolvedParcel.track_id == track,
             UnresolvedParcel.resolved == False,
+            UnresolvedParcel.is_deleted == False,
         )
     )).scalar_one_or_none()
     if unresolved:
@@ -828,9 +865,19 @@ async def update_status(
 ):
     if body.status not in VALID_STATUSES:
         raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {VALID_STATUSES}")
+    if body.status == "issued":
+        raise HTTPException(
+            status_code=400,
+            detail="Использовать /api/issuance для выдачи",
+        )
     parcel = await db.get(ParcelDushanbe, parcel_id)
     if not parcel:
         raise HTTPException(status_code=404, detail="Parcel not found")
+    if parcel.status == "issued":
+        raise HTTPException(
+            status_code=400,
+            detail="Нельзя изменить статус выданной посылки через этот эндпоинт",
+        )
     before = {"status": parcel.status}
     parcel.status = body.status
     await log_action(
@@ -855,11 +902,36 @@ async def update_parcel(
     parcel = await db.get(ParcelDushanbe, parcel_id)
     if not parcel:
         raise HTTPException(status_code=404, detail="Parcel not found")
+    if parcel.status == "issued":
+        raise HTTPException(
+            status_code=400,
+            detail="Нельзя изменить выданную посылку через этот эндпоинт",
+        )
+    update_fields = body.model_dump(exclude_unset=True)
+
+    # Если итоговый delivery_method (новый или текущий) — truck,
+    # итоговый volume_m3 (новый или текущий) обязателен и > 0.
+    # Иначе amount_by_m3=0 и тариф молча падает до amount_by_kg
+    # при следующей выдаче (недосчёт денег).
+    final_method = update_fields.get("delivery_method", parcel.delivery_method)
+    final_volume = update_fields.get("volume_m3", parcel.volume_m3)
+    if final_method == "truck" and (final_volume is None or final_volume <= 0):
+        raise HTTPException(
+            status_code=400,
+            detail="volume_m3 обязателен и должен быть > 0 для delivery_method='truck'",
+        )
+
     before = {}
     after = {}
-    for field, value in body.model_dump(exclude_unset=True).items():
-        if field == "status" and value not in VALID_STATUSES:
-            raise HTTPException(status_code=400, detail=f"Invalid status")
+    for field, value in update_fields.items():
+        if field == "status":
+            if value not in VALID_STATUSES:
+                raise HTTPException(status_code=400, detail="Invalid status")
+            if value == "issued":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Использовать /api/issuance для выдачи",
+                )
         before[field] = getattr(parcel, field)
         setattr(parcel, field, value)
         after[field] = value

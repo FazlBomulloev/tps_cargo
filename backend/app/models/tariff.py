@@ -14,6 +14,7 @@ class Tariff(Base):
     method: Mapped[str] = mapped_column(String(20), nullable=False)
     price_per_kg: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     price_per_m3: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    # TODO(IN-026): hardcoded default currency; revisit if multi-currency Settings support is added.
     currency: Mapped[str] = mapped_column(String(10), default="TJS", server_default="TJS")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     created_by: Mapped[int] = mapped_column(Integer, ForeignKey("staff_users.id"), nullable=False)

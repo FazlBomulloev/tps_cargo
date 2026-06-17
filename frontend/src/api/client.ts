@@ -5,7 +5,6 @@ const api = axios.create({ baseURL: "/api" });
 
 api.interceptors.request.use((config) => {
   const token = useAuthStore.getState().token;
-  console.log("Interceptor token:", token);
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -15,7 +14,9 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (r) => r,
   (error) => {
-    console.error("Response error:", error.response?.status, error.response?.data);
+    if (import.meta.env.DEV) {
+      console.error("Response error:", error.response?.status);
+    }
     if (error.response?.status === 401 && !window.location.pathname.includes("/login")) {
       useAuthStore.getState().logout();
       window.location.href = "/login";

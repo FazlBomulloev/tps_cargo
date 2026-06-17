@@ -1,9 +1,11 @@
 from collections import defaultdict
 from datetime import datetime, timedelta
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import String, func, select
+from sqlalchemy import Date, String, cast, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.database import get_db
 from app.models.client import Client
@@ -57,18 +59,23 @@ async def overview(
     # (неопознанная, resolved=false) — она физически уже в
     # Душанбе. Иначе одна посылка считалась бы дважды
     # (и в Китае, и в Душанбе).
-    dushanbe_tracks = select(ParcelDushanbe.track_id).where(
-        ParcelDushanbe.is_deleted == False
+    # BE-20: EXISTS вместо NOT IN — NOT IN с подзапросом не использует
+    # индекс на track_id и считается построчно по всей правой таблице.
+    dushanbe_track_exists = exists().where(
+        ParcelDushanbe.track_id == ParcelChina.track_id,
+        ParcelDushanbe.is_deleted.is_(False),
     )
-    unresolved_tracks = select(UnresolvedParcel.track_id).where(
-        UnresolvedParcel.resolved.is_(False)
+    unresolved_track_exists = exists().where(
+        UnresolvedParcel.track_id == ParcelChina.track_id,
+        UnresolvedParcel.resolved.is_(False),
     )
+    # BE-19: china_count/dushanbe_count — остатки «на текущий момент»,
+    # а не «за период». _time_filter здесь не применяется намеренно.
     china_count = (await db.execute(
         select(func.count(ParcelChina.id)).where(
             ParcelChina.is_deleted == False,
-            ParcelChina.track_id.notin_(dushanbe_tracks),
-            ParcelChina.track_id.notin_(unresolved_tracks),
-            *_time_filter(ParcelChina.created_at, start, end),
+            ~dushanbe_track_exists,
+            ~unresolved_track_exists,
         )
     )).scalar() or 0
 
@@ -80,18 +87,25 @@ async def overview(
         select(func.count(ParcelDushanbe.id)).where(
             ParcelDushanbe.status == "received_dushanbe",
             ParcelDushanbe.is_deleted == False,
-            *_time_filter(ParcelDushanbe.created_at, start, end),
         )
     )).scalar() or 0
 
+    unresolved_count_total = (await db.execute(
+        select(func.count(UnresolvedParcel.id)).where(
+            UnresolvedParcel.resolved.is_(False),
+        )
+    )).scalar() or 0
+
+    dushanbe_count += unresolved_count_total
+
+    # unresolved_count «за период» — отдельно, нужен только для
+    # added_count (оборот), не для остатков выше.
     unresolved_count = (await db.execute(
         select(func.count(UnresolvedParcel.id)).where(
             UnresolvedParcel.resolved.is_(False),
             *_time_filter(UnresolvedParcel.created_at, start, end),
         )
     )).scalar() or 0
-
-    dushanbe_count += unresolved_count
 
     issued_count = (await db.execute(
         select(func.count(ParcelDushanbe.id)).where(
@@ -139,12 +153,33 @@ async def overview(
             Expense.category,
             func.coalesce(func.sum(Expense.amount), 0),
         )
-        .where(*_time_filter(Expense.created_at, start, end))
+        .where(
+            Expense.is_deleted.is_(False),
+            *_time_filter(Expense.created_at, start, end),
+        )
         .group_by(Expense.category)
     )).all()
-    expense_by_category = {c: float(s) for c, s in expense_rows}
-    total_expenses = sum(expense_by_category.values())
-    revenue_val = float(gross_revenue) - total_expenses
+    # Decimal держим до самого конца расчёта, чтобы не накапливать
+    # ошибку округления float. В JSON отдаём через quantize(0.01)
+    # перед float — совместимо с фронтом (число), но без потери
+    # точности на промежуточных шагах.
+    expense_by_category_dec = {
+        c: Decimal(str(s)) for c, s in expense_rows
+    }
+    total_expenses_dec = sum(
+        expense_by_category_dec.values(), Decimal("0")
+    )
+    gross_revenue_dec = Decimal(str(gross_revenue))
+    revenue_val_dec = gross_revenue_dec - total_expenses_dec
+
+    def _q(d: Decimal) -> float:
+        return float(d.quantize(Decimal("0.01")))
+
+    expense_by_category = {
+        c: _q(v) for c, v in expense_by_category_dec.items()
+    }
+    total_expenses = _q(total_expenses_dec)
+    revenue_val = _q(revenue_val_dec)
 
     new_clients = (await db.execute(
         select(func.count(Client.id)).where(*_time_filter(Client.created_at, start, end))
@@ -164,10 +199,26 @@ async def overview(
         .where(*_time_filter(IssuanceOrder.issued_at, start, end))
         .group_by(IssuanceItem.delivery_method)
     )).all()
-    revenue_by_method = {m: float(s) for m, s in revenue_rows}
-    # Минусуем расходы той же категории из «выручки по методу».
-    for cat, exp in expense_by_category.items():
-        revenue_by_method[cat] = revenue_by_method.get(cat, 0.0) - exp
+    # BE-18: gross — валовая выручка по методу, без вычета расходов.
+    gross_revenue_by_method_dec = {m: Decimal(str(s)) for m, s in revenue_rows}
+    gross_revenue_by_method = {
+        m: _q(v) for m, v in gross_revenue_by_method_dec.items()
+    }
+    # net — после вычета расходов той же категории. Если по методу не
+    # было выдач (gross=0), но есть расходы — не показываем отрицательную
+    # «выручку»: это уже не revenue, а чистый убыток за период, и его
+    # есть отдельно total_expenses/expense_by_category.
+    net_revenue_by_method_dec = {}
+    for cat, exp_dec in expense_by_category_dec.items():
+        if cat in gross_revenue_by_method_dec:
+            net_revenue_by_method_dec[cat] = (
+                gross_revenue_by_method_dec[cat] - exp_dec
+            )
+    for m, v in gross_revenue_by_method_dec.items():
+        net_revenue_by_method_dec.setdefault(m, v)
+    net_revenue_by_method = {m: _q(v) for m, v in net_revenue_by_method_dec.items()}
+    # Обратная совместимость со старым полем revenue_by_method (фронт).
+    revenue_by_method = net_revenue_by_method
 
     # Разбивка зарегистрированного веса по способу доставки.
     weight_rows = (await db.execute(
@@ -191,12 +242,14 @@ async def overview(
         "china_added": china_added,
         "dushanbe_added": dushanbe_added,
         "total_weight": float(total_weight),
-        "revenue": float(revenue_val),
-        "gross_revenue": float(gross_revenue),
+        "revenue": revenue_val,
+        "gross_revenue": _q(gross_revenue_dec),
         "total_expenses": total_expenses,
         "expense_by_category": expense_by_category,
         "new_clients": new_clients,
         "revenue_by_method": revenue_by_method,
+        "gross_revenue_by_method": gross_revenue_by_method,
+        "net_revenue_by_method": net_revenue_by_method,
         "weight_by_method": weight_by_method,
     }
 
@@ -216,7 +269,7 @@ async def parcels_by_day(
     if end is None:
         end = now
 
-    day_label = func.substr(func.cast(ParcelChina.created_at, String), 1, 10)
+    day_label = cast(ParcelChina.created_at, Date)
     china = (await db.execute(
         select(day_label.label("day"), func.count(ParcelChina.id))
         .where(
@@ -226,7 +279,7 @@ async def parcels_by_day(
         .group_by("day").order_by("day")
     )).all()
 
-    day_label2 = func.substr(func.cast(ParcelDushanbe.created_at, String), 1, 10)
+    day_label2 = cast(ParcelDushanbe.created_at, Date)
     dushanbe = (await db.execute(
         select(day_label2.label("day"), func.count(ParcelDushanbe.id))
         .where(
@@ -292,9 +345,16 @@ async def top_clients(
         result = (await db.execute(
             query.group_by(IssuanceOrder.client_id).order_by(order_col).limit(limit)
         )).all()
+        client_ids = [r.client_id for r in result]
+        clients_map: dict[int, Client] = {}
+        if client_ids:
+            rows = (await db.execute(
+                select(Client).where(Client.id.in_(client_ids))
+            )).scalars().all()
+            clients_map = {c.id: c for c in rows}
         clients = []
         for r in result:
-            c = await db.get(Client, r.client_id)
+            c = clients_map.get(r.client_id)
             clients.append({
                 "client_id": r.client_id,
                 "tps_code": c.tps_code if c else "?",
@@ -320,9 +380,16 @@ async def top_clients(
         .order_by(func.count(ParcelDushanbe.id).desc())
         .limit(limit)
     )).all()
+    client_ids = [r.client_id for r in result]
+    clients_map: dict[int, Client] = {}
+    if client_ids:
+        rows = (await db.execute(
+            select(Client).where(Client.id.in_(client_ids))
+        )).scalars().all()
+        clients_map = {c.id: c for c in rows}
     clients = []
     for r in result:
-        c = await db.get(Client, r.client_id)
+        c = clients_map.get(r.client_id)
         clients.append({
             "client_id": r.client_id,
             "tps_code": c.tps_code if c else "?",
@@ -346,6 +413,7 @@ async def stuck_parcels(
 
     query = (
         select(ParcelDushanbe)
+        .options(joinedload(ParcelDushanbe.client))
         .where(
             ParcelDushanbe.status == "received_dushanbe",
             ParcelDushanbe.is_deleted == False,
@@ -355,10 +423,12 @@ async def stuck_parcels(
     filters = _time_filter(ParcelDushanbe.created_at, start, end)
     if filters:
         query = query.where(*filters)
-    result = (await db.execute(query.order_by(ParcelDushanbe.created_at.asc()))).scalars().all()
+    result = (await db.execute(
+        query.order_by(ParcelDushanbe.created_at.asc())
+    )).unique().scalars().all()
     items = []
     for p in result:
-        c = await db.get(Client, p.client_id)
+        c = p.client
         waiting = (datetime.utcnow() - p.created_at).days
         items.append({
             "parcel_id": p.id, "track_id": p.track_id,
@@ -389,9 +459,16 @@ async def staff_activity(
     if filters:
         query = query.where(*filters)
     result = (await db.execute(query)).all()
+    staff_ids = [r.staff_id for r in result]
+    staff_map: dict[int, StaffUser] = {}
+    if staff_ids:
+        rows = (await db.execute(
+            select(StaffUser).where(StaffUser.id.in_(staff_ids))
+        )).scalars().all()
+        staff_map = {s.id: s for s in rows}
     items = []
     for r in result:
-        staff = await db.get(StaffUser, r.staff_id)
+        staff = staff_map.get(r.staff_id)
         items.append({
             "staff_id": r.staff_id,
             "full_name": staff.full_name if staff else "?",

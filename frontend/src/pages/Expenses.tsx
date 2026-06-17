@@ -7,9 +7,7 @@ import {
   Input,
   Button,
   Table,
-  Tag,
   message,
-  Typography,
   Statistic,
   Popconfirm,
   Space,
@@ -17,15 +15,8 @@ import {
 import { SaveOutlined, DeleteOutlined } from "@ant-design/icons";
 import { useAuthStore } from "../store/authStore";
 import { createExpense, deleteExpense, getExpenses } from "../api/expenses";
-
-const categoryTag = (v: string) => (
-  <Tag
-    color={v === "avia" ? "blue" : "orange"}
-    style={{ borderRadius: 20, padding: "2px 12px" }}
-  >
-    {v === "avia" ? "Авиа" : "Фура"}
-  </Tag>
-);
+import type { DeliveryMethod } from "../types/api";
+import { PageHeader, MethodTag } from "../components/ui";
 
 export default function Expenses() {
   const [form] = Form.useForm();
@@ -89,17 +80,17 @@ export default function Expenses() {
 
   return (
     <>
-      <div className="page-header">
-        <Typography.Title className="page-title" level={3}>
-          Расходы
-        </Typography.Title>
-        <Statistic
-          title="Итого по фильтру"
-          value={totalSum.toFixed(2)}
-          suffix="TJS"
-          valueStyle={{ fontWeight: 700, color: "#FF5630" }}
-        />
-      </div>
+      <PageHeader
+        title="Расходы"
+        actions={
+          <Statistic
+            title="Итого по фильтру"
+            value={totalSum.toFixed(2)}
+            suffix="TJS"
+            valueStyle={{ fontWeight: 700, color: "#FF5630" }}
+          />
+        }
+      />
 
       <div className="stagger-children">
         <Card className="hover-card" style={{ marginBottom: 20 }}>
@@ -113,6 +104,7 @@ export default function Expenses() {
               >
                 <InputNumber
                   min={0.01}
+                  max={1000000}
                   step={1}
                   style={{ width: "100%", borderRadius: 10 }}
                   placeholder="0.00"
@@ -158,7 +150,7 @@ export default function Expenses() {
         </Card>
 
         <Card
-          bodyStyle={{ padding: 0 }}
+          styles={{ body: { padding: 0 } }}
           className="hover-card"
           title={<span style={{ fontWeight: 600 }}>История расходов</span>}
         >
@@ -189,7 +181,7 @@ export default function Expenses() {
                 title: "Категория",
                 dataIndex: "category",
                 width: 110,
-                render: categoryTag,
+                render: (v: DeliveryMethod) => <MethodTag method={v} />,
               },
               {
                 title: "Сумма",
@@ -224,6 +216,7 @@ export default function Expenses() {
                             type="text"
                             danger
                             icon={<DeleteOutlined />}
+                            aria-label="Удалить расход"
                           />
                         </Popconfirm>
                       ),

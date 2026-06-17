@@ -16,6 +16,7 @@ class Client(Base):
     phone: Mapped[str] = mapped_column(String(20), nullable=False)
     address: Mapped[str | None] = mapped_column(Text, nullable=True)
     lang: Mapped[str] = mapped_column(String(5), default="ru", server_default="ru")
+    # TODO: unify soft-delete pattern with is_deleted (IN-20). Currently mixed.
     status: Mapped[str] = mapped_column(String(20), default="active", server_default="active")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     last_activity_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

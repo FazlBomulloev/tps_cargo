@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Table, Button, Modal, Form, Input, Select, message, Typography, Card, Space } from "antd";
+import { Table, Button, Modal, Form, Input, Select, message, Typography, Card, Space, Popconfirm } from "antd";
 import { PlusOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
 import { getWarehouses, createWarehouse, updateWarehouse, deleteWarehouse } from "../api/warehouses";
 
@@ -50,7 +50,7 @@ export default function Warehouses() {
       </div>
 
       <div className="animate-fade-in-up">
-        <Card bodyStyle={{ padding: 0 }} className="hover-card">
+        <Card styles={{ body: { padding: 0 } }} className="hover-card">
           <Table
             dataSource={items}
             rowKey="id"
@@ -68,15 +68,25 @@ export default function Warehouses() {
                       size="small"
                       icon={<EditOutlined />}
                       onClick={() => openEdit(r)}
+                      aria-label="Редактировать склад"
                       style={{ borderRadius: 8 }}
                     />
-                    <Button
-                      size="small"
-                      danger
-                      icon={<DeleteOutlined />}
-                      onClick={() => handleDelete(r.id)}
-                      style={{ borderRadius: 8 }}
-                    />
+                    <Popconfirm
+                      title="Деактивировать склад?"
+                      description="Склад скроется из списков. Историческая привязка сохранится."
+                      okText="Деактивировать"
+                      cancelText="Отмена"
+                      okButtonProps={{ danger: true }}
+                      onConfirm={() => handleDelete(r.id)}
+                    >
+                      <Button
+                        size="small"
+                        danger
+                        icon={<DeleteOutlined />}
+                        aria-label="Деактивировать склад"
+                        style={{ borderRadius: 8 }}
+                      />
+                    </Popconfirm>
                   </Space>
                 ),
               },

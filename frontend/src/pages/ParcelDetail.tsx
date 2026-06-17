@@ -1,17 +1,14 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Card, Descriptions, Tag, Select, Button, message, Typography, Space } from "antd";
+import { Card, Descriptions, Tag, Select, Button, message, Space, Skeleton } from "antd";
 import { ArrowLeftOutlined } from "@ant-design/icons";
 import { getParcel, updateParcelStatus } from "../api/parcels";
-import { fmtKg } from "../utils/format";
+import type { ParcelStatus } from "../types/api";
+import { PageHeader, StatusTag, MethodTag, TrackChip, MoneyCell, WeightCell, EmptyState } from "../components/ui";
 
 const statusLabels: Record<string, string> = {
   received_dushanbe: "В Душанбе",
   issued: "Получена",
-};
-const statusColors: Record<string, string> = {
-  received_dushanbe: "processing",
-  issued: "success",
 };
 
 export default function ParcelDetail() {
@@ -19,9 +16,15 @@ export default function ParcelDetail() {
   const navigate = useNavigate();
   const [parcel, setParcel] = useState<any>(null);
   const [newStatus, setNewStatus] = useState<string>("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (id) getParcel(+id).then((r) => { setParcel(r.data); setNewStatus(r.data.status); });
+    if (id) {
+      setLoading(true);
+      getParcel(+id)
+        .then((r) => { setParcel(r.data); setNewStatus(r.data.status); })
+        .finally(() => setLoading(false));
+    }
   }, [id]);
 
   const handleStatusChange = async () => {
@@ -35,23 +38,23 @@ export default function ParcelDetail() {
     }
   };
 
-  if (!parcel) return null;
+  if (loading) return <Skeleton active />;
+  if (!parcel) return <EmptyState title="Посылка не найдена" />;
 
   return (
     <>
-      <div className="page-header">
-        <Space>
+      <PageHeader
+        title={`Посылка #${parcel.id}`}
+        actions={
           <Button
             type="text"
             icon={<ArrowLeftOutlined />}
             onClick={() => navigate(-1)}
+            aria-label="Назад"
             style={{ borderRadius: 10 }}
           />
-          <Typography.Title className="page-title" level={3}>
-            Посылка #{parcel.id}
-          </Typography.Title>
-        </Space>
-      </div>
+        }
+      />
 
       <div className="animate-fade-in-up">
         <Card className="hover-card">
@@ -62,29 +65,25 @@ export default function ParcelDetail() {
             contentStyle={{ background: "#fff" }}
           >
             <Descriptions.Item label="Трек-код">
-              <span style={{ fontFamily: "monospace", fontWeight: 600 }}>{parcel.track_id}</span>
+              <TrackChip value={parcel.track_id} />
             </Descriptions.Item>
             <Descriptions.Item label="Статус">
-              <Tag color={statusColors[parcel.status]} style={{ borderRadius: 20, padding: "2px 12px" }}>
-                {statusLabels[parcel.status]}
-              </Tag>
+              <StatusTag status={parcel.status as ParcelStatus} />
             </Descriptions.Item>
             <Descriptions.Item label="Client ID">{parcel.client_id}</Descriptions.Item>
             <Descriptions.Item label="Метод">
-              <Tag color={parcel.delivery_method === "avia" ? "blue" : "orange"} style={{ borderRadius: 20 }}>
-                {parcel.delivery_method === "avia" ? "Авиа" : "Фура"}
-              </Tag>
+              <MethodTag method={parcel.delivery_method} />
             </Descriptions.Item>
             <Descriptions.Item label="Вес">
-              <span style={{ fontWeight: 600 }}>{fmtKg(parcel.weight_kg)}</span>
+              <WeightCell value={parcel.weight_kg} />
             </Descriptions.Item>
             <Descriptions.Item label="Объём">{parcel.volume_m3 ? `${parcel.volume_m3} м³` : "—"}</Descriptions.Item>
             <Descriptions.Item label="Сумма">
-              <span style={{ fontWeight: 600, color: "#00A76F" }}>
-                {parcel.amount_due ? `${parcel.amount_due} TJS` : "—"}
-              </span>
+              {parcel.amount_due ? <MoneyCell value={parcel.amount_due} /> : "—"}
             </Descriptions.Item>
-            <Descriptions.Item label="Тариф">{parcel.tariff_snapshot ? `${parcel.tariff_snapshot} TJS` : "—"}</Descriptions.Item>
+            <Descriptions.Item label="Тариф">
+              {parcel.tariff_snapshot ? <MoneyCell value={parcel.tariff_snapshot} /> : "—"}
+            </Descriptions.Item>
             <Descriptions.Item label="Регистрация Китай">
               <Tag color={parcel.has_china_registration ? "success" : "default"}>
                 {parcel.has_china_registration ? "Да" : "Нет"}

@@ -1,12 +1,16 @@
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 from sqlalchemy import select
 
 from app.config import settings
-from app.database import async_session, engine, Base
+from app.database import async_session
 from app.models import *  # noqa: F401,F403 — register all models
 from app.models.staff import StaffUser
 from app.models.warehouse import Warehouse
@@ -30,14 +34,32 @@ from app.api.expenses import router as expenses_router
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
-app = FastAPI(title="Cargo TPS API", version="1.0.0", docs_url=None, redoc_url=None)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    Path("data").mkdir(exist_ok=True)
+    Path("data/avatars").mkdir(exist_ok=True)
+    # Схема БД управляется только через Alembic (см. backend/alembic).
+    # Перед запуском приложения деплой обязан выполнить `alembic upgrade head`.
+    await _seed_owner()
+    await _seed_warehouses()
+    await _seed_tariffs()
+    log.info("Cargo TPS API started")
+    yield
+    log.info("Cargo TPS API shutting down")
+
+
+app = FastAPI(title="Cargo TPS API", version="1.0.0", docs_url=None, redoc_url=None, lifespan=lifespan)
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://195.133.21.15:3000", "http://localhost:3000"],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With", "X-Bot-Secret"],
 )
 
 app.include_router(auth_router)
@@ -53,98 +75,6 @@ app.include_router(stats_router)
 app.include_router(audit_router)
 app.include_router(notifications_router)
 app.include_router(expenses_router)
-
-
-@app.on_event("startup")
-async def on_startup():
-    Path("data").mkdir(exist_ok=True)
-    Path("data/avatars").mkdir(exist_ok=True)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    await _migrate_staff_columns()
-    await _migrate_parcel_soft_delete_columns()
-    await _migrate_parcel_shelf_column()
-    await _seed_owner()
-    await _seed_warehouses()
-    await _seed_tariffs()
-    log.info("Cargo TPS API started")
-
-
-async def _migrate_staff_columns():
-    from sqlalchemy import text, inspect as sa_inspect
-    async with engine.begin() as conn:
-        def _check_and_add(connection):
-            inspector = sa_inspect(connection)
-            columns = [c["name"] for c in inspector.get_columns("staff_users")]
-            stmts = []
-            if "avatar_url" not in columns:
-                stmts.append("ALTER TABLE staff_users ADD COLUMN avatar_url VARCHAR(500)")
-            if "permissions" not in columns:
-                stmts.append("ALTER TABLE staff_users ADD COLUMN permissions TEXT")
-            for stmt in stmts:
-                connection.execute(text(stmt))
-        await conn.run_sync(_check_and_add)
-
-
-async def _migrate_parcel_soft_delete_columns():
-    """Добавляет колонки мягкого удаления в существующие таблицы
-    посылок. Base.metadata.create_all не меняет уже созданные
-    таблицы, поэтому недостающие колонки добавляем вручную, как
-    и для staff_users. Безопасно для живых данных (только ADD)."""
-    from sqlalchemy import text, inspect as sa_inspect
-    async with engine.begin() as conn:
-        def _check_and_add(connection):
-            inspector = sa_inspect(connection)
-            # На Postgres булев DEFAULT — false, на SQLite — 0.
-            is_pg = connection.dialect.name == "postgresql"
-            false_lit = "false" if is_pg else "0"
-            for table in ("parcels_dushanbe", "parcels_china"):
-                columns = [
-                    c["name"]
-                    for c in inspector.get_columns(table)
-                ]
-                stmts = []
-                if "is_deleted" not in columns:
-                    stmts.append(
-                        f"ALTER TABLE {table} ADD COLUMN "
-                        f"is_deleted BOOLEAN NOT NULL "
-                        f"DEFAULT {false_lit}"
-                    )
-                if "deleted_at" not in columns:
-                    stmts.append(
-                        f"ALTER TABLE {table} ADD COLUMN "
-                        "deleted_at TIMESTAMP"
-                    )
-                if "deleted_by" not in columns:
-                    stmts.append(
-                        f"ALTER TABLE {table} ADD COLUMN "
-                        "deleted_by INTEGER"
-                    )
-                for stmt in stmts:
-                    connection.execute(text(stmt))
-                    log.info("Миграция: %s", stmt)
-        await conn.run_sync(_check_and_add)
-
-
-async def _migrate_parcel_shelf_column():
-    """Добавляет колонку «полка» (shelf) в parcels_dushanbe.
-    Безопасно для живых данных (только ADD COLUMN)."""
-    from sqlalchemy import text, inspect as sa_inspect
-    async with engine.begin() as conn:
-        def _check_and_add(connection):
-            inspector = sa_inspect(connection)
-            columns = [
-                c["name"]
-                for c in inspector.get_columns("parcels_dushanbe")
-            ]
-            if "shelf" not in columns:
-                stmt = (
-                    "ALTER TABLE parcels_dushanbe "
-                    "ADD COLUMN shelf VARCHAR(20)"
-                )
-                connection.execute(text(stmt))
-                log.info("Миграция: %s", stmt)
-        await conn.run_sync(_check_and_add)
 
 
 async def _seed_owner():
@@ -220,5 +150,10 @@ async def _seed_tariffs():
 @app.get("/")
 async def root():
     return {"service": "Cargo TPS API", "version": "1.0.0"}
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
 
 

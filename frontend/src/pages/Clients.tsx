@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Table, Input, Typography, Tag, Card } from "antd";
+import { Table, Input, Card } from "antd";
 import { getClients } from "../api/clients";
+import { PageHeader, EmptyState } from "../components/ui";
 
 export default function Clients() {
   const [data, setData] = useState<any>({ items: [], total: 0 });
@@ -10,31 +11,45 @@ export default function Clients() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
-    getClients({ page, per_page: 20, q: search || undefined }).then((r) => { setData(r.data); setLoading(false); });
+    getClients({ page, per_page: 20, q: search || undefined })
+      .then((r) => {
+        if (!cancelled) setData(r.data);
+      })
+      .catch(() => {
+        if (!cancelled) setData({ items: [], total: 0 });
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [page, search]);
 
   return (
     <>
-      <div className="page-header">
-        <Typography.Title className="page-title" level={3}>
-          Клиенты
-        </Typography.Title>
-        <Input.Search
-          placeholder="Поиск по TPS / телефону / ФИО"
-          style={{ maxWidth: 360 }}
-          onSearch={(v) => { setSearch(v); setPage(1); }}
-          allowClear
-          size="large"
-        />
-      </div>
+      <PageHeader
+        title="Клиенты"
+        actions={
+          <Input.Search
+            placeholder="Поиск по TPS / телефону / ФИО"
+            style={{ maxWidth: 360 }}
+            onSearch={(v) => { setSearch(v); setPage(1); }}
+            allowClear
+            size="large"
+          />
+        }
+      />
 
       <div className="animate-fade-in-up">
-        <Card bodyStyle={{ padding: 0 }} className="hover-card">
+        <Card styles={{ body: { padding: 0 } }} className="hover-card">
           <Table
             loading={loading}
             dataSource={data.items}
             rowKey="id"
+            locale={{ emptyText: <EmptyState title="Пока нет клиентов" description="Добавьте первого клиента через Telegram-бота" /> }}
             pagination={{
               current: page,
               total: data.total,

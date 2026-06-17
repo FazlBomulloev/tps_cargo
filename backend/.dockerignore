@@ -1,4 +1,11 @@
 __pycache__
 *.pyc
+.venv
+*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
 data/
+seed_*.py
 .env
+*.md

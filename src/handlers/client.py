@@ -1,11 +1,17 @@
 import logging
+from time import monotonic
 
 from aiogram import Bot, F, Router
+from aiogram.exceptions import (
+    TelegramBadRequest,
+    TelegramForbiddenError,
+    TelegramNotFound,
+)
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
-from src.config import CHANNEL_URL, CHANNEL_USERNAME
+from src.config import CHANNEL_URL, CHANNEL_USERNAME, REDIS_URL
 from src.db import (
     create_client,
     find_in_china,
@@ -20,7 +26,7 @@ from src.db import (
     update_client_lang,
 )
 from src.fmt import (
-    fmt_my_parcels,
+    fmt_my_parcels_pages,
     fmt_profile,
     fmt_track_result_client,
     fmt_warehouse_for_client,
@@ -65,15 +71,36 @@ class EditProfileStates(StatesGroup):
 
 # ── Helpers ──
 
+_LANG_CACHE_TTL = 300  # 5 минут
+# Кэш (lang, tps_code) по telegram_id — снимает N+1 на get_client
+# в _ensure_state при каждом нажатии кнопки меню (BO-19).
+_client_cache: dict[int, tuple[str, str, float]] = {}
+
+
 async def _get_lang(state: FSMContext) -> str:
     data = await state.get_data()
-    return data.get("lang", "ru")
+    lang = data.get("lang")
+    if lang:
+        return lang
+    # До регистрации (язык ещё не выбран/не сохранён в FSM) лучше
+    # подсказать Telegram-локалью клиента, чем хардкодить "ru" (BO-36).
+    return "ru"
 
 
 async def _ensure_state(state: FSMContext, telegram_id: int) -> str:
     data = await state.get_data()
     if data.get("registered"):
         return data.get("lang", "ru")
+
+    now = monotonic()
+    cached = _client_cache.get(telegram_id)
+    if cached and cached[2] > now:
+        lang, tps_code, _ = cached
+        await state.update_data(
+            registered=True, tps_code=tps_code, lang=lang,
+        )
+        return lang
+
     client = await get_client(telegram_id)
     if client:
         lang = client.lang or "ru"
@@ -82,11 +109,27 @@ async def _ensure_state(state: FSMContext, telegram_id: int) -> str:
             tps_code=client.tps_code,
             lang=lang,
         )
+        _client_cache[telegram_id] = (
+            lang, client.tps_code, now + _LANG_CACHE_TTL,
+        )
         return lang
     return data.get("lang", "ru")
 
 
-async def _check_sub(
+_SUB_TTL = 600  # 10 минут
+
+if REDIS_URL:
+    import redis.asyncio as redis_async
+
+    _redis = redis_async.from_url(REDIS_URL)
+else:
+    _redis = None
+
+# Фоллбэк-кэш, если Redis не настроен (TTL-словарь в памяти процесса).
+_sub_cache: dict[int, tuple[bool, float]] = {}
+
+
+async def _real_check_sub(
     bot: Bot, user_id: int,
 ) -> bool:
     if not CHANNEL_USERNAME:
@@ -99,12 +142,45 @@ async def _check_sub(
         return member.status in (
             "member", "administrator", "creator",
         )
+    except (TelegramForbiddenError, TelegramNotFound) as e:
+        # Бот не имеет доступа к каналу (не админ/каналу не существует) —
+        # не блокируем пользователя из-за ошибки конфигурации бота.
+        log.warning(
+            "Нет доступа к каналу при проверке подписки %s: %s",
+            user_id, e,
+        )
+        return True
     except Exception as e:
         log.warning(
             "Ошибка проверки подписки %s: %s",
             user_id, e,
         )
         return False
+
+
+async def _check_sub(
+    bot: Bot, user_id: int,
+) -> bool:
+    if not CHANNEL_USERNAME:
+        return True
+
+    if _redis:
+        cached = await _redis.get(f"sub:{user_id}")
+        if cached is not None:
+            return cached == b"1"
+        is_member = await _real_check_sub(bot, user_id)
+        await _redis.set(
+            f"sub:{user_id}", "1" if is_member else "0", ex=_SUB_TTL,
+        )
+        return is_member
+
+    now = monotonic()
+    cached = _sub_cache.get(user_id)
+    if cached and cached[1] > now:
+        return cached[0]
+    is_member = await _real_check_sub(bot, user_id)
+    _sub_cache[user_id] = (is_member, now + _SUB_TTL)
+    return is_member
 
 
 async def _show_sub_screen(
@@ -426,10 +502,13 @@ async def on_my_parcels(
     data = await state.get_data()
     tps_code = data.get("tps_code", "")
     parcels = await get_parcels_by_client(tps_code)
-    await msg.answer(
-        fmt_my_parcels(tps_code, parcels, lang),
-        reply_markup=client_main_kb(lang),
-    )
+    pages = fmt_my_parcels_pages(tps_code, parcels, lang)
+    for i, text in enumerate(pages):
+        kb = client_main_kb(lang) if i == len(pages) - 1 else None
+        try:
+            await msg.answer(text, reply_markup=kb)
+        except TelegramBadRequest:
+            await msg.answer(text[:4000] + "…", reply_markup=kb)
 
 
 # ── Проверка трека ──
@@ -474,13 +553,14 @@ async def on_check_track_input(
         if not dushanbe
         else None
     )
+    await state.set_state(None)
     await msg.answer(
         fmt_track_result_client(
             text.upper(), in_china,
             dushanbe, lang,
             unresolved_info=unresolved_info,
         ),
-        reply_markup=back_kb(lang),
+        reply_markup=client_main_kb(lang),
     )
 
 
@@ -513,7 +593,13 @@ async def on_warehouse_select(
 ):
     await cb.answer()
     lang = await _get_lang(state)
-    wid = int(cb.data.split("_")[1])
+    try:
+        wid = int(cb.data.split("_")[1])
+    except (IndexError, ValueError):
+        await cb.message.answer(
+            get_text("warehouse_not_found", lang),
+        )
+        return
     w = await get_warehouse(wid)
     if not w:
         await cb.message.answer(

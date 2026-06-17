@@ -1,0 +1,91 @@
+:root {
+  /* Colors — surfaces */
+  --c-bg-app: #F4F6F8;
+  --c-bg-surface: #FFFFFF;
+  --c-bg-elevated: #FFFFFF;
+  --c-bg-muted: #F4F6F8;
+
+  /* Colors — text */
+  --c-text: #0F1419;
+  --c-text-secondary: #5B6B7B;
+  --c-text-muted: #919EAB;
+  --c-text-inverse: #FFFFFF;
+
+  /* Colors — borders */
+  --c-border: rgba(145, 158, 171, 0.16);
+  --c-border-strong: rgba(145, 158, 171, 0.32);
+  --c-border-focus: #00A76F;
+
+  /* Colors — brand */
+  --c-primary: #00A76F;
+  --c-primary-hover: #007867;
+  --c-primary-soft: rgba(0, 167, 111, 0.08);
+
+  /* Colors — semantic */
+  --c-success: #00A76F;
+  --c-warning: #FFAB00;
+  --c-error: #FF5630;
+  --c-info: #00B8D9;
+  --c-warning-soft: rgba(255, 171, 0, 0.10);
+  --c-error-soft: rgba(255, 86, 48, 0.10);
+  --c-info-soft: rgba(0, 184, 217, 0.10);
+
+  /* Sidebar */
+  --c-sidebar-bg: #1C252E;
+  --c-sidebar-text: rgba(255, 255, 255, 0.78);
+  --c-sidebar-text-muted: rgba(255, 255, 255, 0.45);
+  --c-sidebar-active-bg: rgba(0, 167, 111, 0.16);
+
+  /* Spacing scale (4-pt) */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+  --s-7: 48px;
+  --s-8: 64px;
+
+  /* Radii */
+  --radius-sm: 6px;   /* tags, chips */
+  --radius-md: 10px;  /* inputs, buttons */
+  --radius-lg: 12px;  /* modals, sections */
+  --radius-xl: 16px;  /* cards */
+  --radius-2xl: 24px; /* login card */
+  --radius-full: 999px;
+
+  /* Type scale */
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-md: 18px;
+  --text-lg: 22px;
+  --text-xl: 28px;
+  --text-2xl: 36px;
+
+  /* Line heights */
+  --lh-tight: 1.2;
+  --lh-normal: 1.5;
+
+  /* Font families */
+  --font-sans: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  /* Shadows — softer, less Material */
+  --shadow-1: 0 1px 2px rgba(15, 20, 25, 0.04);
+  --shadow-2: 0 4px 12px rgba(15, 20, 25, 0.06);
+  --shadow-3: 0 12px 24px rgba(15, 20, 25, 0.08);
+
+  /* Motion */
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --easing-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

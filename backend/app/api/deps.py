@@ -1,4 +1,5 @@
 import json
+import secrets
 from collections.abc import Callable
 
 from fastapi import Depends, HTTPException, Header, Request, status
@@ -30,6 +31,10 @@ async def get_current_user(
     user = result.scalar_one_or_none()
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive")
+    issued_at = payload.get("iat")
+    if user.password_changed_at and issued_at is not None:
+        if int(issued_at) < int(user.password_changed_at.timestamp()):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token revoked")
     return user
 
 
@@ -63,12 +68,14 @@ def require_permission(perm: str) -> Callable:
 
 
 async def verify_bot_secret(x_bot_secret: str = Header(...)) -> None:
-    if x_bot_secret != settings.API_BOT_SECRET:
+    if not secrets.compare_digest(x_bot_secret, settings.API_BOT_SECRET):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid bot secret")
 
 
 def get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    direct_ip = request.client.host if request.client else "unknown"
+    if direct_ip in settings.TRUSTED_PROXIES:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+    return direct_ip

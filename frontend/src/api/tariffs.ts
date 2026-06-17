@@ -1,11 +1,28 @@
 import api from "./client";
+import type { DeliveryMethod, Tariff } from "../types/api";
 
-export const getTariffs = () => api.get("/tariffs");
+export interface CreateTariffData {
+  method: DeliveryMethod;
+  price_per_kg: number;
+  price_per_m3?: number;
+  currency?: string;
+  is_active?: boolean;
+}
 
-export const getActiveTariffs = () => api.get("/tariffs/active");
+export interface UpdateTariffData {
+  method?: DeliveryMethod;
+  price_per_kg?: number;
+  price_per_m3?: number;
+  currency?: string;
+  is_active?: boolean;
+}
 
-export const createTariff = (data: Record<string, unknown>) =>
-  api.post("/tariffs", data);
+export const getTariffs = () => api.get<Tariff[]>("/tariffs");
 
-export const updateTariff = (id: number, data: Record<string, unknown>) =>
-  api.patch(`/tariffs/${id}`, data);
+export const getActiveTariffs = () => api.get<Tariff[]>("/tariffs/active");
+
+export const createTariff = (data: CreateTariffData) =>
+  api.post<Tariff>("/tariffs", data);
+
+export const updateTariff = (id: number, data: UpdateTariffData) =>
+  api.patch<Tariff>(`/tariffs/${id}`, data);

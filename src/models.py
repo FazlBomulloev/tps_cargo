@@ -40,6 +40,7 @@ class Client(Base):
     phone: Mapped[str] = mapped_column(
         String(20), nullable=False,
     )
+    # address: managed by backend, bot does not modify (BO-46)
     address: Mapped[str | None] = mapped_column(
         Text, nullable=True,
     )

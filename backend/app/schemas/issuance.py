@@ -1,7 +1,9 @@
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+MAX_CUSTOM_PRICE = Decimal("1000000")
 
 
 class IssuanceCreate(BaseModel):
@@ -11,6 +13,22 @@ class IssuanceCreate(BaseModel):
     payment_status: str
     comment: str | None = None
     custom_prices: dict[int, Decimal] | None = None
+
+    @field_validator("custom_prices")
+    @classmethod
+    def _validate_custom_prices(cls, value):
+        if value is None:
+            return value
+        for parcel_id, amount in value.items():
+            if amount < 0:
+                raise ValueError(
+                    f"custom_prices[{parcel_id}] не может быть отрицательным"
+                )
+            if amount >= MAX_CUSTOM_PRICE:
+                raise ValueError(
+                    f"custom_prices[{parcel_id}] превышает допустимый максимум"
+                )
+        return value
 
 
 class IssuanceItemResponse(BaseModel):

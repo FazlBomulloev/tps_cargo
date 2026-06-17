@@ -1,15 +1,28 @@
+from enum import StrEnum
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.setting import Setting
 from app.models.staff import StaffUser
 from app.services.audit_service import log_action
-from app.api.deps import get_client_ip, require_role
+from app.api.deps import get_client_ip, require_role, get_current_user
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
+
+
+class SettingKey(StrEnum):
+    # IN-24: реально используемые ключи — tariffs/support (см.
+    # src/handlers/client.py: get_setting('tariffs'), get_setting('support')).
+    # Остальные зарезервированы под будущие настройки компании.
+    COMPANY_NAME = "company_name"
+    CURRENCY = "currency"
+    CHANNEL_REQUIRED = "channel_required"
+    TARIFFS = "tariffs"
+    SUPPORT = "support"
 
 
 class SettingValue(BaseModel):
@@ -26,7 +39,13 @@ async def list_settings(
 
 
 @router.get("/{key}")
-async def get_setting(key: str, db: AsyncSession = Depends(get_db)):
+async def get_setting(
+    key: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: StaffUser = Depends(get_current_user),
+):
+    if key not in SettingKey.__members__.values():
+        raise HTTPException(status_code=400, detail="Unknown setting key")
     s = await db.get(Setting, key)
     if not s:
         raise HTTPException(status_code=404, detail="Setting not found")
@@ -41,11 +60,14 @@ async def update_setting(
     db: AsyncSession = Depends(get_db),
     current_user: StaffUser = Depends(require_role("admin_dushanbe", "owner")),
 ):
+    if key not in SettingKey.__members__.values():
+        raise HTTPException(status_code=400, detail="Unknown setting key")
     s = await db.get(Setting, key)
     if s:
         before = {"value": s.value}
         s.value = body.value
         s.updated_by = current_user.id
+        s.updated_at = func.now()
     else:
         before = None
         s = Setting(key=key, value=body.value, updated_by=current_user.id)

@@ -1,8 +1,10 @@
 import { useState, useRef } from "react";
 import { Card, Form, Input, Button, message, Typography, Avatar, Upload, Divider } from "antd";
+import type { UploadProps } from "antd";
 import { UserOutlined, CameraOutlined, SaveOutlined } from "@ant-design/icons";
 import { updateProfile, uploadAvatar, getMe } from "../api/auth";
 import { useAuth } from "../hooks/useAuth";
+import { ROLE_LABELS } from "../constants/roles";
 
 export default function Profile() {
   const { user, setAuth } = useAuth();
@@ -42,24 +44,20 @@ export default function Profile() {
     }
   };
 
-  const handleAvatarUpload = async (file: File) => {
-    setAvatarLoading(true);
-    try {
-      await uploadAvatar(file);
-      await refreshUser();
-      message.success("Фото обновлено");
-    } catch (e: any) {
-      message.error(e.response?.data?.detail || "Ошибка загрузки");
-    } finally {
-      setAvatarLoading(false);
-    }
+  const handleAvatarUpload: UploadProps["beforeUpload"] = (file) => {
+    (async () => {
+      setAvatarLoading(true);
+      try {
+        await uploadAvatar(file as File);
+        await refreshUser();
+        message.success("Фото обновлено");
+      } catch (e: any) {
+        message.error(e.response?.data?.detail || "Ошибка загрузки");
+      } finally {
+        setAvatarLoading(false);
+      }
+    })();
     return false;
-  };
-
-  const roleLabels: Record<string, string> = {
-    owner: "Владелец",
-    admin_china: "Админ Китай",
-    admin_dushanbe: "Админ Душанбе",
   };
 
   return (
@@ -78,7 +76,12 @@ export default function Profile() {
               accept="image/jpeg,image/png,image/webp"
               beforeUpload={handleAvatarUpload}
             >
-              <div style={{ position: "relative", cursor: "pointer" }}>
+              <div
+                role="button"
+                tabIndex={0}
+                aria-label="Изменить фото профиля"
+                style={{ position: "relative", cursor: "pointer" }}
+              >
                 <Avatar
                   size={80}
                   src={user?.avatar_url || undefined}
@@ -112,7 +115,7 @@ export default function Profile() {
             </Upload>
             <div>
               <div style={{ fontSize: 20, fontWeight: 700 }}>{user?.full_name}</div>
-              <div style={{ color: "#919EAB", fontSize: 14 }}>{roleLabels[user?.role || ""] || user?.role}</div>
+              <div style={{ color: "#919EAB", fontSize: 14 }}>{ROLE_LABELS[(user?.role || "") as keyof typeof ROLE_LABELS] || user?.role}</div>
             </div>
           </div>
 

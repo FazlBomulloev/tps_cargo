@@ -1,11 +1,13 @@
-import { useState } from "react";
-import { Card, Input, Button, Table, Tag, Radio, message, Typography, Space, Statistic, List, Switch, InputNumber } from "antd";
-import { SearchOutlined, ShoppingCartOutlined, UserOutlined } from "@ant-design/icons";
+import { useCallback, useMemo, useState } from "react";
+import { Alert, Card, Input, Button, Table, Radio, message, Typography, Space, Statistic, List, InputNumber, Steps, Skeleton } from "antd";
+import { SearchOutlined, ShoppingCartOutlined } from "@ant-design/icons";
 import { searchClients } from "../api/clients";
 import { getParcels } from "../api/parcels";
 import { getActiveTariffs } from "../api/tariffs";
 import { createIssuance } from "../api/issuance";
-import { fmtKg } from "../utils/format";
+import { PageHeader, TrackChip, MethodTag, WeightCell, MoneyCell, EmptyState } from "../components/ui";
+
+const MAX_PARCEL_PAGES = 20;
 
 export default function Issuance() {
   const [query, setQuery] = useState("");
@@ -19,51 +21,196 @@ export default function Issuance() {
   const [loading, setLoading] = useState(false);
   const [comment, setComment] = useState("");
   const [customPrices, setCustomPrices] = useState<Record<number, number>>({});
+  const [editingPrice, setEditingPrice] = useState<number | null>(null);
+  const [loadingSearch, setLoadingSearch] = useState(false);
+  const [searched, setSearched] = useState(false);
 
   const selectClient = async (c: any) => {
     setClient(c);
     setCandidates([]);
-    const [p, t] = await Promise.all([
-      getParcels({ client_id: c.id, status: "received_dushanbe", per_page: 100 }),
+
+    const [allParcels, t] = await Promise.all([
+      (async () => {
+        const acc: any[] = [];
+        let page = 1;
+        let total = 0;
+        while (true) {
+          const { data } = await getParcels({
+            client_id: c.id,
+            status: "received_dushanbe",
+            per_page: 100,
+            page,
+          });
+          acc.push(...(data.items || []));
+          total = data.total || 0;
+          if (acc.length >= total) break;
+          if ((data.items || []).length === 0) break;
+          page += 1;
+          if (page > MAX_PARCEL_PAGES) break;
+        }
+        if (total > acc.length) {
+          message.warning(`Показаны первые ${acc.length} из ${total} посылок. Свяжитесь с админом.`);
+        }
+        return acc;
+      })(),
       getActiveTariffs(),
     ]);
-    setParcels(p.data.items || []);
+    setParcels(allParcels);
     setTariffs(t.data);
     setSelected([]);
     setCustomPrices({});
+    setEditingPrice(null);
     setComment("");
   };
 
   const search = async () => {
-    const { data } = await searchClients(query.trim());
-    if (data.length === 0) { message.warning("Клиент не найден"); return; }
-    if (data.length === 1) {
-      await selectClient(data[0]);
-    } else {
-      setCandidates(data);
-      setClient(null);
-      setParcels([]);
-      setSelected([]);
+    setLoadingSearch(true);
+    try {
+      const { data } = await searchClients(query.trim());
+      setSearched(true);
+      if (data.length === 0) {
+        setCandidates([]);
+        setClient(null);
+        setParcels([]);
+        setSelected([]);
+        return;
+      }
+      if (data.length === 1) {
+        await selectClient(data[0]);
+      } else {
+        setCandidates(data);
+        setClient(null);
+        setParcels([]);
+        setSelected([]);
+      }
+    } finally {
+      setLoadingSearch(false);
     }
   };
 
-  const calcAmount = (p: any) => {
-    const t = tariffs.find((t: any) => t.method === p.delivery_method);
+  const handleResetPrice = useCallback((id: number) => {
+    setCustomPrices((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }, []);
+
+  const tariffByMethod = useMemo(
+    () => Object.fromEntries(tariffs.map((t: any) => [t.method, t])),
+    [tariffs],
+  );
+
+  const calcAmount = useCallback((p: any) => {
+    const t = tariffByMethod[p.delivery_method];
     if (!t) return 0;
     if (p.delivery_method === "avia") return +(p.weight_kg * t.price_per_kg).toFixed(2);
     const byKg = p.weight_kg * t.price_per_kg;
     const byM3 = (p.volume_m3 || 0) * (t.price_per_m3 || 0);
     return +Math.max(byKg, byM3).toFixed(2);
-  };
+  }, [tariffByMethod]);
 
-  const selectedParcels = parcels.filter((p) => selected.includes(p.id));
-  const totalWeight = selectedParcels.reduce((s, p) => s + +p.weight_kg, 0);
-  const totalAmount = selectedParcels.reduce((s, p) => {
-    if (p.id in customPrices) return s + customPrices[p.id];
-    return s + calcAmount(p);
-  }, 0);
+  const selectedParcels = useMemo(
+    () => parcels.filter((p) => selected.includes(p.id)),
+    [parcels, selected],
+  );
+  const totalWeight = useMemo(
+    () => selectedParcels.reduce((s, p) => s + +p.weight_kg, 0),
+    [selectedParcels],
+  );
+  const totalAmount = useMemo(
+    () => selectedParcels.reduce((s, p) => {
+      if (p.id in customPrices) return s + customPrices[p.id];
+      return s + calcAmount(p);
+    }, 0),
+    [selectedParcels, customPrices, calcAmount],
+  );
+
+  const requiredMethods = Array.from(
+    new Set(selectedParcels.map((p) => p.delivery_method).filter(Boolean)),
+  );
+  const missingTariffMethods = requiredMethods.filter(
+    (m) => !tariffs.some((t) => t.method === m),
+  );
+  const tariffsLoaded = tariffs.length > 0;
+  const issueBlocked = !tariffsLoaded || missingTariffMethods.length > 0;
+  const currentStep = !client ? 0 : selected.length === 0 ? 1 : 2;
+
+  const parcelColumns = useMemo(() => [
+    {
+      title: "Трек",
+      dataIndex: "track_id",
+      render: (v: string) => <TrackChip value={v} copyable={false} />,
+    },
+    {
+      title: "Вес",
+      dataIndex: "weight_kg",
+      render: (v: number) => <WeightCell value={v} />,
+    },
+    {
+      title: "Объём",
+      dataIndex: "volume_m3",
+      render: (v: number) => v ? `${v} м³` : "—",
+    },
+    {
+      title: "Метод",
+      dataIndex: "delivery_method",
+      render: (v: "avia" | "truck") => <MethodTag method={v} />,
+    },
+    {
+      title: "Сумма",
+      render: (_: any, r: any) => {
+        const isCustom = r.id in customPrices;
+        const amount = isCustom ? customPrices[r.id] : calcAmount(r);
+        if (editingPrice === r.id) {
+          return (
+            <InputNumber
+              autoFocus
+              size="small"
+              min={0}
+              value={amount}
+              onChange={(v) => {
+                if (v != null) setCustomPrices({ ...customPrices, [r.id]: Number(v) });
+              }}
+              onBlur={() => setEditingPrice(null)}
+              onPressEnter={() => setEditingPrice(null)}
+              style={{ width: 110 }}
+            />
+          );
+        }
+        return (
+          <Space>
+            <span
+              onClick={() => setEditingPrice(r.id)}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontVariantNumeric: "tabular-nums",
+                cursor: "pointer",
+                padding: "2px 6px",
+                borderRadius: 4,
+                background: isCustom ? "var(--c-warning-soft)" : "transparent",
+                color: isCustom ? "var(--c-warning)" : "var(--c-text)",
+              }}
+              title="Кликни, чтобы изменить"
+            >
+              {amount.toFixed(2)} TJS
+            </span>
+            {isCustom && (
+              <Button size="small" type="link" onClick={() => handleResetPrice(r.id)}>
+                Сбросить цену
+              </Button>
+            )}
+          </Space>
+        );
+      },
+    },
+  ], [customPrices, editingPrice, calcAmount, handleResetPrice]);
 
   const handleIssue = async () => {
+    if (issueBlocked) {
+      message.error("Тарифы не настроены — выдача недоступна");
+      return;
+    }
     if (!selected.length) { message.warning("Выберите посылки"); return; }
     setLoading(true);
     try {
@@ -79,9 +226,9 @@ export default function Issuance() {
         comment: comment.trim() || undefined,
         custom_prices: Object.keys(cp).length ? cp : undefined,
       });
-      message.success(`Выдача оформлена! Итого: ${totalWeight.toFixed(1)} кг, ${totalAmount.toFixed(2)} TJS`);
+      message.success(`Выдача оформлена · Итого: ${totalWeight.toFixed(1)} кг, ${totalAmount.toFixed(2)} TJS`);
       setClient(null); setParcels([]); setSelected([]);
-      setQuery(""); setCandidates([]);
+      setQuery(""); setCandidates([]); setSearched(false);
       setComment(""); setCustomPrices({});
     } catch (e: any) {
       message.error(e.response?.data?.detail || "Ошибка");
@@ -92,11 +239,16 @@ export default function Issuance() {
 
   return (
     <>
-      <div className="page-header">
-        <Typography.Title className="page-title" level={3}>
-          Выдача товара
-        </Typography.Title>
-      </div>
+      <PageHeader title="Выдача товара" />
+      <Steps
+        current={currentStep}
+        items={[
+          { title: "Поиск клиента" },
+          { title: "Выбор посылок" },
+          { title: "Подтверждение и выдача" },
+        ]}
+        style={{ marginBottom: 24 }}
+      />
 
       <div className="stagger-children">
         <Card className="hover-card" style={{ marginBottom: 20 }}>
@@ -112,12 +264,31 @@ export default function Issuance() {
             <Button
               type="primary"
               onClick={search}
+              loading={loadingSearch}
               style={{ height: 48, borderRadius: "0 12px 12px 0", paddingInline: 24 }}
             >
               Найти
             </Button>
           </Space.Compact>
+          <Typography.Text type="secondary" style={{ fontSize: 12, marginTop: 8, display: "block" }}>
+            Поиск: TPS-код, телефон или ФИО
+          </Typography.Text>
         </Card>
+
+        {loadingSearch && (
+          <Card style={{ marginBottom: 20 }}>
+            <Skeleton active paragraph={{ rows: 3 }} />
+          </Card>
+        )}
+
+        {!loadingSearch && searched && candidates.length === 0 && !client && (
+          <Card style={{ marginBottom: 20 }}>
+            <EmptyState
+              title="Клиент не найден"
+              description="Попробуйте ввести TPS-код, телефон или ФИО полностью"
+            />
+          </Card>
+        )}
 
         {candidates.length > 1 && !client && (
           <Card
@@ -164,6 +335,26 @@ export default function Issuance() {
           </Card>
         )}
 
+        {client && !tariffsLoaded && (
+          <Alert
+            type="warning"
+            showIcon
+            message="Тарифы не настроены"
+            description="Откройте раздел «Тарифы» и добавьте активные тарифы для авиа и фуры. Без тарифов выдача недоступна — сумма не считается."
+            style={{ marginBottom: 20 }}
+          />
+        )}
+
+        {client && tariffsLoaded && missingTariffMethods.length > 0 && (
+          <Alert
+            type="warning"
+            showIcon
+            message="Не настроен тариф"
+            description={`Для метода ${missingTariffMethods.join(", ")} нет активного тарифа. Уберите такие посылки из выдачи или добавьте тариф.`}
+            style={{ marginBottom: 20 }}
+          />
+        )}
+
         {client && (
           <Card
             className="hover-card animate-scale-in"
@@ -203,91 +394,7 @@ export default function Issuance() {
                 selectedRowKeys: selected,
                 onChange: (keys) => setSelected(keys as number[]),
               }}
-              columns={[
-                {
-                  title: "Трек",
-                  dataIndex: "track_id",
-                  render: (v: string) => (
-                    <span style={{ fontFamily: "monospace", fontWeight: 500 }}>{v}</span>
-                  ),
-                },
-                {
-                  title: "Вес",
-                  dataIndex: "weight_kg",
-                  render: (v: number) => <span style={{ fontWeight: 500 }}>{fmtKg(v)}</span>,
-                },
-                {
-                  title: "Объём",
-                  dataIndex: "volume_m3",
-                  render: (v: number) => v ? `${v} м³` : "—",
-                },
-                {
-                  title: "Метод",
-                  dataIndex: "delivery_method",
-                  render: (v: string) => (
-                    <Tag color={v === "avia" ? "blue" : "orange"} style={{ borderRadius: 20 }}>
-                      {v === "avia" ? "Авиа" : "Фура"}
-                    </Tag>
-                  ),
-                },
-                {
-                  title: "Сумма",
-                  render: (_: any, r: any) => {
-                    const hasCustom = r.id in customPrices;
-                    return (
-                      <span style={{
-                        fontWeight: 600,
-                        color: hasCustom ? "#919EAB" : "#00A76F",
-                        textDecoration: hasCustom ? "line-through" : "none",
-                      }}>
-                        {calcAmount(r).toFixed(2)} TJS
-                      </span>
-                    );
-                  },
-                },
-                {
-                  title: "Своя цена",
-                  render: (_: any, r: any) => {
-                    const active = r.id in customPrices;
-                    return (
-                      <Space>
-                        <Switch
-                          size="small"
-                          checked={active}
-                          onChange={(checked) => {
-                            setCustomPrices((prev) => {
-                              if (checked) {
-                                return { ...prev, [r.id]: calcAmount(r) };
-                              }
-                              const next = { ...prev };
-                              delete next[r.id];
-                              return next;
-                            });
-                          }}
-                        />
-                        {active && (
-                          <InputNumber
-                            size="small"
-                            min={0}
-                            step={0.01}
-                            value={customPrices[r.id]}
-                            onChange={(v) => {
-                              if (v != null) {
-                                setCustomPrices((prev) => ({
-                                  ...prev,
-                                  [r.id]: v,
-                                }));
-                              }
-                            }}
-                            style={{ width: 120 }}
-                            suffix="TJS"
-                          />
-                        )}
-                      </Space>
-                    );
-                  },
-                },
-              ]}
+              columns={parcelColumns}
             />
 
             <div
@@ -304,14 +411,14 @@ export default function Issuance() {
             >
               <Statistic
                 title="Вес"
-                value={totalWeight.toFixed(1)}
-                suffix="кг"
+                value={totalWeight}
+                formatter={() => <WeightCell value={totalWeight} />}
                 valueStyle={{ fontWeight: 700, fontSize: 24 }}
               />
               <Statistic
                 title="Сумма"
-                value={totalAmount.toFixed(2)}
-                suffix="TJS"
+                value={totalAmount}
+                formatter={() => <MoneyCell value={totalAmount} />}
                 valueStyle={{ fontWeight: 700, fontSize: 24, color: "#00A76F" }}
               />
               <div>
@@ -333,6 +440,7 @@ export default function Issuance() {
                 size="large"
                 onClick={handleIssue}
                 loading={loading}
+                disabled={issueBlocked || selected.length === 0}
                 icon={<ShoppingCartOutlined />}
                 style={{ borderRadius: 12, height: 48, paddingInline: 32, fontWeight: 600 }}
               >

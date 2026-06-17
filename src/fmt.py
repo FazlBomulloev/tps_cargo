@@ -171,79 +171,109 @@ def _fmt_kg(value) -> str:
     return f"{value:.2f}".rstrip("0").rstrip(".")
 
 
-def fmt_my_parcels(
+PARCELS_PER_PAGE = 15  # средняя длина 1 посылки ~200 байт, запас от лимита 4096
+
+
+def _fmt_one_parcel(p: dict, lang: str) -> str:
+    lines = ["│", f"│ 📦  {p['track_id']}"]
+    # 2) Принято в Китае — только если зарегистрировано.
+    if p.get("china_at"):
+        lines.append(
+            f"│   {get_text('parcel_field_china', lang)}: "
+            f"{_format_date(p['china_at'])}"
+        )
+    # 3) Статус.
+    lines.append(
+        f"│   {get_text('parcel_field_status', lang)}: "
+        f"{_status_text(p['status'], lang)}"
+    )
+    # 4) Прибыло в Душанбе.
+    if p.get("arrived_at"):
+        lines.append(
+            f"│   "
+            f"{get_text('parcel_field_arrived', lang)}: "
+            f"{_format_date(p['arrived_at'])}"
+        )
+    # Полка на складе в Душанбе.
+    if p.get("shelf"):
+        lines.append(
+            f"│   {get_text('parcel_field_shelf', lang)}: "
+            f"{p['shelf']}"
+        )
+    # 5) Вес.
+    if p.get("weight_kg"):
+        lines.append(
+            f"│   {get_text('parcel_field_weight', lang)}: "
+            f"{_fmt_kg(p['weight_kg'])} кг"
+        )
+    # 6) Сумма к оплате: зафиксированная либо ориентировочная.
+    if p.get("amount_due"):
+        lines.append(
+            f"│   {get_text('parcel_field_amount', lang)}: "
+            f"{_fmt_amount(p['amount_due'])}"
+        )
+    elif p.get("amount_estimated"):
+        lines.append(
+            "│   "
+            f"{get_text('parcel_field_amount_est', lang)}: "
+            f"{_fmt_amount(p['amount_estimated'])}"
+        )
+    # 7) Дата выдачи — для выданных.
+    if p["status"] == "issued" and p.get("issued_at"):
+        lines.append(
+            f"│   {get_text('parcel_field_issued', lang)}: "
+            f"{_format_date(p['issued_at'])}"
+        )
+    return "\n".join(lines)
+
+
+def fmt_my_parcels_pages(
     tps_code: str,
     parcels: list,
     lang: str = "ru",
-) -> str:
+) -> list[str]:
     title = get_text("my_parcels_title", lang)
-    lines = [
+    header_top = [
         "┌─────────────────────────┐",
         f"│     {title}      │",
         "├─────────────────────────┤",
         f"│ 🆔  {tps_code}",
     ]
     if not parcels:
+        lines = list(header_top)
         lines.append("│")
-        lines.append(
-            "│ " + get_text("no_parcels", lang)
-        )
+        lines.append("│ " + get_text("no_parcels", lang))
         lines.append("└─────────────────────────┘")
-        return "\n".join(lines)
+        return ["\n".join(lines)]
 
-    for p in parcels:
-        lines.append("│")
-        lines.append(f"│ 📦  {p['track_id']}")
-        # 2) Принято в Китае — только если зарегистрировано.
-        if p.get("china_at"):
+    total_pages = (
+        len(parcels) + PARCELS_PER_PAGE - 1
+    ) // PARCELS_PER_PAGE
+    pages = []
+    for i in range(0, len(parcels), PARCELS_PER_PAGE):
+        chunk = parcels[i:i + PARCELS_PER_PAGE]
+        lines = list(header_top)
+        if total_pages > 1:
+            page_num = i // PARCELS_PER_PAGE + 1
             lines.append(
-                f"│   {get_text('parcel_field_china', lang)}: "
-                f"{_format_date(p['china_at'])}"
+                f"│   {get_text('my_parcels_page', lang).format(page=page_num, total_pages=total_pages)}"
             )
-        # 3) Статус.
-        lines.append(
-            f"│   {get_text('parcel_field_status', lang)}: "
-            f"{_status_text(p['status'], lang)}"
-        )
-        # 4) Прибыло в Душанбе.
-        if p.get("arrived_at"):
-            lines.append(
-                f"│   "
-                f"{get_text('parcel_field_arrived', lang)}: "
-                f"{_format_date(p['arrived_at'])}"
-            )
-        # Полка на складе в Душанбе.
-        if p.get("shelf"):
-            lines.append(
-                f"│   {get_text('parcel_field_shelf', lang)}: "
-                f"{p['shelf']}"
-            )
-        # 5) Вес.
-        if p.get("weight_kg"):
-            lines.append(
-                f"│   {get_text('parcel_field_weight', lang)}: "
-                f"{_fmt_kg(p['weight_kg'])} кг"
-            )
-        # 6) Сумма к оплате: зафиксированная либо ориентировочная.
-        if p.get("amount_due"):
-            lines.append(
-                f"│   {get_text('parcel_field_amount', lang)}: "
-                f"{_fmt_amount(p['amount_due'])}"
-            )
-        elif p.get("amount_estimated"):
-            lines.append(
-                "│   "
-                f"{get_text('parcel_field_amount_est', lang)}: "
-                f"{_fmt_amount(p['amount_estimated'])}"
-            )
-        # 7) Дата выдачи — для выданных.
-        if p["status"] == "issued" and p.get("issued_at"):
-            lines.append(
-                f"│   {get_text('parcel_field_issued', lang)}: "
-                f"{_format_date(p['issued_at'])}"
-            )
-    lines.append("└─────────────────────────┘")
-    return "\n".join(lines)
+        for p in chunk:
+            lines.append(_fmt_one_parcel(p, lang))
+        lines.append("└─────────────────────────┘")
+        pages.append("\n".join(lines))
+    return pages
+
+
+def fmt_my_parcels(
+    tps_code: str,
+    parcels: list,
+    lang: str = "ru",
+) -> str:
+    """Совместимость со старым кодом: одна строка со всеми страницами.
+    Для длинных списков предпочитай fmt_my_parcels_pages, иначе можно
+    превысить лимит Telegram в 4096 байт на сообщение."""
+    return "\n\n".join(fmt_my_parcels_pages(tps_code, parcels, lang))
 
 
 def fmt_warehouse_for_client(

@@ -1,8 +1,12 @@
+import os.path
 import shutil
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, status
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,13 +17,15 @@ from app.utils.security import create_access_token, hash_password, verify_passwo
 from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+limiter = Limiter(key_func=get_remote_address)
 
 AVATARS_DIR = Path("data/avatars")
 AVATARS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute")
+async def login(request: Request, body: LoginRequest, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(StaffUser).where(StaffUser.login == body.login))
     user = result.scalar_one_or_none()
     if not user or not verify_password(body.password, user.password_hash):
@@ -54,6 +60,7 @@ async def update_profile(
         if not body.current_password or not verify_password(body.current_password, current_user.password_hash):
             raise HTTPException(status_code=400, detail="Неверный текущий пароль")
         current_user.password_hash = hash_password(body.new_password)
+        current_user.password_changed_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(current_user)
     return StaffMeResponse.from_staff(current_user)
@@ -85,8 +92,14 @@ async def upload_avatar(
 from fastapi.responses import FileResponse
 
 @router.get("/avatars/{filename}")
-async def get_avatar(filename: str):
-    path = AVATARS_DIR / filename
+async def get_avatar(
+    filename: str,
+    current_user: StaffUser = Depends(get_current_user),
+):
+    safe = os.path.basename(filename)
+    if safe != filename or ".." in safe or "/" in safe or "\\" in safe:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    path = AVATARS_DIR / safe
     if not path.exists():
         raise HTTPException(status_code=404, detail="Not found")
     return FileResponse(path)

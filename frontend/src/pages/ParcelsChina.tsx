@@ -3,6 +3,8 @@ import { Card, Input, Button, message, Typography, Divider, Space, Tag, Table, P
 import { ScanOutlined, CloudUploadOutlined, CheckCircleOutlined, DeleteOutlined } from "@ant-design/icons";
 import { addChinaParcel, addChinaBulk, getChinaParcels, deleteChinaParcel } from "../api/parcels";
 import { useAuthStore } from "../store/authStore";
+import { TrackChip, PageHeader } from "../components/ui";
+import { formatDateTimeRu } from "../utils/format";
 
 const { TextArea } = Input;
 
@@ -22,34 +24,46 @@ export default function ParcelsChina() {
     user?.role === "owner" ||
     (user?.permissions || []).includes("parcels_delete");
 
-  const loadParcels = async (p = page) => {
-    setTableLoading(true);
-    try {
-      const { data } = await getChinaParcels({
-        page: p,
-        per_page: 20,
-        q: search.trim() || undefined,
-      });
-      setParcels(data.items || []);
-      setTotal(data.total || 0);
-    } catch {
-      // ignore
-    } finally {
-      setTableLoading(false);
-    }
-  };
+  const [reloadCounter, setReloadCounter] = useState(0);
 
   const handleDelete = async (id: number) => {
     try {
       await deleteChinaParcel(id);
       message.success("Посылка удалена");
-      loadParcels();
+      setReloadCounter((c) => c + 1);
     } catch (e: any) {
       message.error(e.response?.data?.detail || "Ошибка удаления");
     }
   };
 
-  useEffect(() => { loadParcels(); }, [page, search]);
+  useEffect(() => {
+    let cancelled = false;
+    setTableLoading(true);
+    getChinaParcels({
+      page,
+      per_page: 20,
+      q: search.trim() || undefined,
+    })
+      .then(({ data }) => {
+        if (cancelled) return;
+        setParcels(data.items || []);
+        setTotal(data.total || 0);
+      })
+      .catch(() => {
+        if (!cancelled) message.error("Не удалось загрузить посылки");
+      })
+      .finally(() => {
+        if (!cancelled) setTableLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [page, search, reloadCounter]);
+
+  const triggerReload = () => {
+    if (page !== 1) setPage(1);
+    else setReloadCounter((c) => c + 1);
+  };
 
   const handleSingle = async () => {
     if (!singleTrack.trim()) return;
@@ -59,8 +73,7 @@ export default function ParcelsChina() {
       message.success(`Трек ${singleTrack.trim().toUpperCase()} добавлен`);
       setSingleTrack("");
       inputRef.current?.focus();
-      loadParcels(1);
-      setPage(1);
+      triggerReload();
     } catch (e: any) {
       message.error(e.response?.data?.detail || "Ошибка");
     } finally {
@@ -77,8 +90,7 @@ export default function ParcelsChina() {
       setResult(data);
       message.success(`Добавлено: ${data.added} из ${data.total}`);
       setBulkText("");
-      loadParcels(1);
-      setPage(1);
+      triggerReload();
     } catch (e: any) {
       message.error(e.response?.data?.detail || "Ошибка");
     } finally {
@@ -92,11 +104,7 @@ export default function ParcelsChina() {
 
   return (
     <>
-      <div className="page-header">
-        <Typography.Title className="page-title" level={3}>
-          Склад Китай
-        </Typography.Title>
-      </div>
+      <PageHeader title="Склад Китай" />
 
       <div className="stagger-children">
         <Card
@@ -147,6 +155,9 @@ export default function ParcelsChina() {
             onChange={(e) => setBulkText(e.target.value)}
             style={{ borderRadius: 12, fontSize: 14, fontFamily: "monospace" }}
           />
+          <Typography.Text type="secondary" style={{ fontSize: 12, display: "block", marginTop: 6 }}>
+            Один трек на строку, A-Z 0-9, без пробелов
+          </Typography.Text>
           <Button
             type="primary"
             style={{ marginTop: 16, height: 44, borderRadius: 12 }}
@@ -228,17 +239,12 @@ export default function ParcelsChina() {
               {
                 title: "Трек-код",
                 dataIndex: "track_id",
-                render: (v: string) => (
-                  <span style={{ fontFamily: "monospace", fontWeight: 500 }}>{v}</span>
-                ),
+                render: (v: string) => <TrackChip value={v} />,
               },
               {
                 title: "Дата",
                 dataIndex: "created_at",
-                render: (v: string) => new Date(v).toLocaleString("ru-RU", {
-                  day: "2-digit", month: "2-digit", year: "numeric",
-                  hour: "2-digit", minute: "2-digit",
-                }),
+                render: (v: string) => formatDateTimeRu(v),
               },
               ...(canDelete
                 ? [
@@ -258,6 +264,7 @@ export default function ParcelsChina() {
                             danger
                             type="text"
                             icon={<DeleteOutlined />}
+                            aria-label="Удалить посылку"
                           />
                         </Popconfirm>
                       ),

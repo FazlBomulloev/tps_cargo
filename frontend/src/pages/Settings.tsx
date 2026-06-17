@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { Card, Input, Button, message, Typography, Space } from "antd";
-import { SaveOutlined, SettingOutlined } from "@ant-design/icons";
+import { SaveOutlined, DollarOutlined, CustomerServiceOutlined } from "@ant-design/icons";
 import { getSettings, updateSetting } from "../api/settings";
 
 const keys = [
-  { key: "tariffs", label: "Тарифы (текст для бота)", icon: "💰" },
-  { key: "support", label: "Поддержка (текст для бота)", icon: "🎧" },
+  { key: "tariffs", label: "Тарифы (текст для бота)", icon: <DollarOutlined /> },
+  { key: "support", label: "Поддержка (текст для бота)", icon: <CustomerServiceOutlined /> },
 ];
 
 export default function Settings() {
@@ -44,7 +44,7 @@ export default function Settings() {
             style={{ marginBottom: 20 }}
             title={
               <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 20 }}>{k.icon}</span>
+                <span style={{ fontSize: 20, color: "var(--c-text-muted)" }}>{k.icon}</span>
                 <span style={{ fontWeight: 600 }}>{k.label}</span>
               </span>
             }
