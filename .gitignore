@@ -34,3 +34,6 @@ Thumbs.db
 
 # Screenshots / temp
 *.png
+
+# Audit reports (содержит карту уязвимостей — не публиковать)
+audit/
