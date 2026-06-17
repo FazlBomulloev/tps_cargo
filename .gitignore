@@ -15,9 +15,10 @@ backend/__pycache__/
 
 # Frontend
 frontend/node_modules/
-frontend/dist/
 frontend/tsconfig.tsbuildinfo
 *.tsbuildinfo
+# frontend/dist is committed — production build is pre-built locally,
+# server only runs `docker compose build frontend` (nginx + COPY dist).
 
 # Playwright MCP
 .playwright-mcp/
