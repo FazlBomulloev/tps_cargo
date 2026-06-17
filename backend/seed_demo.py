@@ -387,10 +387,22 @@ async def seed():
         await session.flush()
         print(f"  IssuanceOrders: {orders_n}, IssuanceItems: {items_n}")
 
-        # Expenses
-        for _ in range(85):
+        # Expenses — суммарно ~30-40% от выручки, чтобы дашборд показывал
+        # положительный profit. Берём фактический gross revenue из issued
+        # посылок и распределяем 35% на 85 строк расходов.
+        gross = sum(
+            (p.amount_due or Decimal("0") for p in issued), Decimal("0")
+        )
+        expense_pool = gross * Decimal("0.35")
+        # Распределяем как 85 случайных долей через "ломаную палку"
+        cuts = sorted(random.random() for _ in range(84))
+        shares = [cuts[0]] + [cuts[i] - cuts[i - 1] for i in range(1, 84)] + [1 - cuts[-1]]
+
+        for share in shares:
             category = random.choices(["avia", "truck"], weights=[0.3, 0.7], k=1)[0]
-            amount = Decimal(str(round(random.uniform(120, 8500), 2)))
+            amount = (Decimal(str(share)) * expense_pool).quantize(Decimal("0.01"))
+            if amount < Decimal("10"):
+                amount = Decimal("10.00")  # минимум для красоты
             comment = random.choice(
                 EXPENSE_COMMENTS_AVIA if category == "avia" else EXPENSE_COMMENTS_TRUCK
             )
@@ -400,7 +412,7 @@ async def seed():
             )
             session.add(e)
         await session.flush()
-        print("  Expenses: 85")
+        print(f"  Expenses: 85 (≈ {float(expense_pool):.0f} TJS total, 35% of revenue)")
 
         # NotificationLogs
         notified_parcels = [p for p in dushanbe_parcels if p.notified_at]
