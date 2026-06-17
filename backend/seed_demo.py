@@ -1,341 +1,482 @@
-"""
-Seed script: generates 3 months of realistic demo data.
-Uses existing staff/warehouses/tariffs from the database.
-Run inside api container:  python seed_demo.py
+"""Заполнение БД демо-данными.
+
+Запуск:
+    docker compose exec api python /app/seed_demo.py
+или:
+    docker compose run --rm api python /app/seed_demo.py
+
+Идемпотентен по факту: если в clients > 20 — выходит и ничего не делает.
 """
 import asyncio
+import json
 import random
-import string
-from datetime import datetime, timedelta
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.database import engine, async_session, Base
-from app.models.staff import StaffUser
-from app.models.client import Client
-from app.models.warehouse import Warehouse
-from app.models.tariff import Tariff
-from app.models.parcel_china import ParcelChina
-from app.models.parcel_dushanbe import ParcelDushanbe
-from app.models.issuance import IssuanceOrder, IssuanceItem
-from app.models.unresolved import UnresolvedParcel
-from app.models.audit import AuditLog
+from app.config import settings
+from app.models import (
+    AuditLog,
+    Client,
+    Expense,
+    IssuanceItem,
+    IssuanceOrder,
+    NotificationLog,
+    ParcelChina,
+    ParcelDushanbe,
+    Setting,
+    StaffUser,
+    Tariff,
+    UnresolvedParcel,
+    Warehouse,
+)
+from app.utils.security import hash_password
 
 random.seed(42)
 
-NOW = datetime(2026, 6, 1, 12, 0, 0)
-START = NOW - timedelta(days=90)
+# ─── Справочники ──────────────────────────────────────────────────────────────
 
-FIRST_NAMES_M = [
-    "Фируз", "Шерзод", "Бахтиёр", "Далер", "Рустам", "Аброр", "Сардор",
-    "Жасур", "Нодир", "Акмал", "Достон", "Ислом", "Комил", "Лутфулло",
-    "Мирзо", "Озод", "Парвиз", "Равшан", "Сухроб", "Тохир", "Улугбек",
-    "Фаррух", "Хуршед", "Шухрат", "Эльмурод", "Ёкуб", "Зафар", "Икром",
-    "Камол", "Набижон", "Ориф", "Рахмат", "Сиёвуш", "Умед", "Файзулло",
-]
-FIRST_NAMES_F = [
-    "Мадина", "Нигора", "Зарина", "Фарида", "Дилноза", "Гулнора",
-    "Парвина", "Сабина", "Шахноза", "Азиза", "Малика", "Нилуфар",
-    "Рухшона", "Тахмина", "Хилола",
-]
-LAST_NAMES = [
-    "Рахимов", "Каримов", "Ахмедов", "Назаров", "Усмонов", "Шарипов",
-    "Муродов", "Холиков", "Саидов", "Бобоев", "Мирзоев", "Олимов",
-    "Тошматов", "Хасанов", "Нуров", "Абдуллоев", "Ганиев", "Давлатов",
-    "Исмоилов", "Файзуллоев", "Раджабов", "Содиков", "Турсунов",
-    "Хамидов", "Юлдашев",
+TJ_FIRST_NAMES = [
+    "Бахтиёр", "Шохрух", "Фируза", "Махмадали", "Зухра", "Рустам", "Сафия",
+    "Карим", "Парвина", "Шерали", "Мижгона", "Далер", "Гулнора", "Илхом",
+    "Нозия", "Фарход", "Зарина", "Анвар", "Дилшод", "Сабохат", "Махмуд",
+    "Шахло", "Назрулло", "Гулчехра", "Озодбек", "Манижа", "Хасан", "Зебо",
+    "Ёрмахмад", "Лола", "Камол", "Шахноза", "Рахим", "Райхона", "Бобур",
+    "Нилуфар", "Шавкат", "Мадина", "Сухроб", "Анора", "Темур", "Малика",
+    "Хуршед", "Зарифа", "Мансур", "Дилноза", "Самир", "Маъсума", "Алишер",
+    "Шукрия", "Низом", "Нигина", "Рашид", "Мехринисо", "Музаффар", "Сабина",
+    "Восеъ", "Гулрухсор", "Рамазон", "Зулфия", "Икром", "Феруза", "Хуршеда",
+    "Нурмухаммад", "Олима", "Хайриддин", "Тахмина", "Зокир", "Машарифа",
+    "Сайдулло", "Гулжахон", "Толиб", "Зебуниссо", "Самин", "Озода", "Гайрат",
+    "Майрам", "Холмурод", "Мутрафа", "Маъруф", "Рухшона",
 ]
 
-TRACK_PREFIXES = ["YT", "SF", "LP", "JN", "ZX", "CR", "TX"]
-COMMENTS = [
-    None, None, None, None, None,
-    "Хрупкий товар", "Электроника", "Одежда", "Обувь", "Запчасти",
-    "Косметика", "Аксессуары", "Телефон", "Планшет", "Ноутбук",
+TJ_LAST_NAMES = [
+    "Каримов", "Назаров", "Шарипов", "Рахимов", "Холов", "Сафаров", "Иброгимов",
+    "Ахмадов", "Курбонов", "Махмадалиев", "Рустамов", "Хакимов", "Юсупов",
+    "Алиев", "Камолов", "Раджабов", "Махмудов", "Низомов", "Олимов", "Бобоев",
+    "Содиков", "Эргашев", "Усманов", "Гулов", "Мирзоев", "Шукуров", "Тошев",
+    "Зокиров", "Файзиев", "Икромов",
 ]
-IPS = ["192.168.1.10", "192.168.1.11", "10.0.0.5", "172.16.0.100", "192.168.4.98"]
+
+CHINA_WAREHOUSES = [
+    ("Гуанчжоу склад №1", "Гуанчжоу", "Yiwu International Trade Mart, Hall 1"),
+    ("Иу транзит", "Иу", "Yiwu Futian Market District"),
+    ("Шэньчжэнь Логистика", "Шэньчжэнь", "Bao'an District, Logistics Park"),
+    ("Пекин Авиа", "Пекин", "Shunyi District, Cargo Terminal"),
+]
+
+DUSHANBE_WAREHOUSES = [
+    ("ТПС Душанбе Центральный", "Душанбе", "ул. Нисормухаммад, 14"),
+    ("ТПС Худжанд филиал", "Худжанд", "ул. Хушёр, 88"),
+    ("ТПС Бохтар", "Бохтар", "ул. Айни, 12"),
+]
+
+CN_TRACK_PREFIXES = ["LP", "RU", "CN", "YT", "CR"]
+CN_TRACK_SUFFIXES = ["CN", "YP", "RU"]
+
+CHINA_GOODS = [
+    "Электроника", "Одежда", "Аксессуары", "Косметика", "Текстиль",
+    "Игрушки", "Запчасти авто", "Бытовая техника", "Обувь", "Сумки",
+]
+
+EXPENSE_COMMENTS_AVIA = [
+    "Оплата авиа-фрахта рейс CA-880",
+    "Таможенное оформление Гуанчжоу→Душанбе",
+    "Терминальные сборы Шэньчжэнь",
+    "Авиаперевозка партии электроники",
+    "Аэропортовый сбор Душанбе",
+]
+EXPENSE_COMMENTS_TRUCK = [
+    "Дальнобой Кашгар→Душанбе",
+    "Топливо для фуры рейс 22",
+    "ТО грузовика 18-тонник",
+    "Зарплата водителя за рейс",
+    "Транзитные сборы Кыргызстан",
+    "Загрузка склад Иу",
+]
+
+RESERVED_TPS = {7, 111, 222, 333, 444, 555, 666, 777, 888, 999}
 
 
-def rand_date(start: datetime, end: datetime) -> datetime:
-    delta = (end - start).total_seconds()
-    return start + timedelta(seconds=random.uniform(0, delta))
+# ─── Утилиты ──────────────────────────────────────────────────────────────────
 
 
-def rand_track() -> str:
-    prefix = random.choice(TRACK_PREFIXES)
-    digits = "".join(random.choices(string.digits, k=12))
-    return f"{prefix}{digits}"
+def random_track() -> str:
+    prefix = random.choice(CN_TRACK_PREFIXES)
+    digits = "".join(random.choices("0123456789", k=9))
+    suffix = random.choice(CN_TRACK_SUFFIXES)
+    return f"{prefix}{digits}{suffix}"
 
 
-def rand_phone_tj() -> str:
-    code = random.choice(["90", "91", "92", "93", "98", "88", "77"])
-    num = "".join(random.choices(string.digits, k=7))
-    return f"+992{code}{num}"
+def random_phone() -> str:
+    return "+992" + "".join(random.choices("0123456789", k=9))
 
 
-async def main():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+def random_telegram_id() -> int:
+    return random.randint(100_000_000, 999_999_999)
 
-    async with async_session() as db:
-        # ── Use existing staff ──
-        staff_result = await db.execute(select(StaffUser))
-        staff_list = staff_result.scalars().all()
-        if not staff_list:
-            print("ERROR: No staff users found. Start the API first to create the owner.")
+
+def random_full_name() -> str:
+    return f"{random.choice(TJ_FIRST_NAMES)} {random.choice(TJ_LAST_NAMES)}"
+
+
+def random_date_within(days_ago: int) -> datetime:
+    delta = timedelta(seconds=random.randint(0, days_ago * 86400))
+    return datetime.now(timezone.utc) - delta
+
+
+# ─── Сид ─────────────────────────────────────────────────────────────────────
+
+
+async def seed():
+    engine = create_async_engine(settings.database_url_resolved)
+    Session = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with Session() as session:
+        count = (await session.execute(select(func.count()).select_from(Client))).scalar_one()
+        if count > 20:
+            print(f"⚠ В clients уже {count} записей, выхожу без изменений.")
             return
-        staff_ids = [s.id for s in staff_list]
-        owner_id = next((s.id for s in staff_list if s.role == "owner"), staff_ids[0])
-        china_admin_id = next((s.id for s in staff_list if s.role == "admin_china"), owner_id)
-        dushanbe_admin_id = next((s.id for s in staff_list if s.role == "admin_dushanbe"), owner_id)
-        print(f"Staff: using {len(staff_ids)} existing users")
 
-        # ── Use existing warehouses ──
-        wh_result = await db.execute(select(Warehouse))
-        warehouses = wh_result.scalars().all()
-        if not warehouses:
-            print("ERROR: No warehouses found. Start the API first to seed warehouses.")
-            return
-        china_wh_ids = [w.id for w in warehouses if w.type == "china"]
-        dushanbe_wh_id = next((w.id for w in warehouses if w.type == "dushanbe"), warehouses[0].id)
-        if not china_wh_ids:
-            china_wh_ids = [warehouses[0].id]
-        print(f"Warehouses: using {len(warehouses)} existing")
+        print("Старт seed демо-данных...")
 
-        # ── Use existing tariffs ──
-        tariff_result = await db.execute(select(Tariff).where(Tariff.is_active == True))
-        tariffs = tariff_result.scalars().all()
-        tariff_avia = next((t for t in tariffs if t.method == "avia"), None)
-        tariff_truck = next((t for t in tariffs if t.method == "truck"), None)
-        if not tariff_avia or not tariff_truck:
-            print("ERROR: Tariffs not found. Start the API first to seed tariffs.")
-            return
-        print(f"Tariffs: avia ${tariff_avia.price_per_kg}/kg, truck ${tariff_truck.price_per_kg}/kg")
-
-        # ── Check existing data ──
-        existing_clients = (await db.execute(select(func.count()).select_from(Client))).scalar() or 0
-        existing_china = (await db.execute(select(func.count()).select_from(ParcelChina))).scalar() or 0
-        existing_dushanbe = (await db.execute(select(func.count()).select_from(ParcelDushanbe))).scalar() or 0
-        if existing_clients > 10 or existing_china > 10 or existing_dushanbe > 10:
-            print(f"WARNING: Database already has data (clients={existing_clients}, china={existing_china}, dushanbe={existing_dushanbe})")
-            print("Skipping seed to avoid duplicates. Clear tables first if you want to re-seed.")
+        # Staff
+        owner = (await session.execute(
+            select(StaffUser).where(StaffUser.role == "owner")
+        )).scalar_one_or_none()
+        if not owner:
+            print("⚠ Не найден owner — убедись что lifespan-сид прошёл.")
             return
 
-        # ── Find next TPS code ──
-        tps_result = await db.execute(select(Client.tps_code))
-        used_tps = {row[0] for row in tps_result.all()}
-        next_tps_num = 1
-        while f"TPS{next_tps_num:03d}" in used_tps:
-            next_tps_num += 1
+        staff_pool: list[StaffUser] = [owner]
+        for login, full_name, role, perms in [
+            ("china_admin", "Шохрух Каримов", "admin_china",
+             ["dashboard", "parcels_china", "parcels_list", "clients", "tariffs"]),
+            ("ds_admin", "Фируза Назарова", "admin_dushanbe",
+             ["dashboard", "parcels_dushanbe", "parcels_list", "issuance",
+              "issuance_history", "clients", "unresolved", "expenses"]),
+            ("operator1", "Далер Шарипов", "staff", ["parcels_dushanbe", "issuance"]),
+            ("operator2", "Зарина Холова", "staff", ["parcels_china"]),
+        ]:
+            existing = (await session.execute(
+                select(StaffUser).where(StaffUser.login == login)
+            )).scalar_one_or_none()
+            if existing:
+                staff_pool.append(existing)
+                continue
+            s = StaffUser(
+                login=login, full_name=full_name,
+                password_hash=hash_password("Demo123!"),
+                role=role,
+                permissions=json.dumps(perms),
+                is_active=True,
+            )
+            session.add(s)
+            staff_pool.append(s)
+        await session.flush()
+        print(f"  Staff: {len(staff_pool)}")
 
-        # ── Clients (75) ──
-        clients = []
-        used_tg_ids = set()
-        for i in range(75):
-            is_female = random.random() < 0.3
-            first = random.choice(FIRST_NAMES_F if is_female else FIRST_NAMES_M)
-            last = random.choice(LAST_NAMES)
-            if is_female and last.endswith("ов"):
-                last = last + "а"
-            elif is_female and last.endswith("ев"):
-                last = last + "а"
-            full_name = f"{last} {first}"
-            tg_id = random.randint(100_000_000, 999_999_999)
-            while tg_id in used_tg_ids:
-                tg_id = random.randint(100_000_000, 999_999_999)
-            used_tg_ids.add(tg_id)
-            reg_date = rand_date(START - timedelta(days=10), NOW - timedelta(days=5))
-            tps_code = f"TPS{next_tps_num + i:03d}"
+        # Warehouses
+        warehouses: list[Warehouse] = []
+        for name, city, addr in CHINA_WAREHOUSES:
+            w = Warehouse(
+                name=name, type="china", country="CN", city=city,
+                phone="+86" + "".join(random.choices("0123456789", k=10)),
+                region="Guangdong" if city in ("Гуанчжоу", "Шэньчжэнь") else "Other",
+                address=addr,
+            )
+            session.add(w)
+            warehouses.append(w)
+        for name, city, addr in DUSHANBE_WAREHOUSES:
+            w = Warehouse(
+                name=name, type="dushanbe", country="TJ", city=city,
+                phone="+992" + "".join(random.choices("0123456789", k=9)),
+                region="Tajikistan", address=addr,
+            )
+            session.add(w)
+            warehouses.append(w)
+        await session.flush()
+        china_whs = [w for w in warehouses if w.type == "china"]
+        dushanbe_whs = [w for w in warehouses if w.type == "dushanbe"]
+        print(f"  Warehouses: {len(warehouses)}")
+
+        # Tariffs
+        tariff_avia = Tariff(
+            method="avia", price_per_kg=Decimal("55.00"),
+            price_per_m3=None, currency="TJS", is_active=True, created_by=owner.id,
+        )
+        tariff_truck = Tariff(
+            method="truck", price_per_kg=Decimal("12.50"),
+            price_per_m3=Decimal("3200.00"), currency="TJS", is_active=True, created_by=owner.id,
+        )
+        session.add_all([tariff_avia, tariff_truck])
+        await session.flush()
+        print("  Tariffs: 2")
+
+        # Clients
+        clients: list[Client] = []
+        used_tps: set[int] = set()
+        target_count = 84
+        num = 0
+        while len(clients) < target_count:
+            num += 1
+            if num in RESERVED_TPS or num in used_tps:
+                continue
+            used_tps.add(num)
+            tps_code = f"TPS{num:03d}" if num < 1000 else f"TPS{num}"
+            status = random.choices(
+                ["active", "active", "active", "active", "blocked"], k=1
+            )[0]
+            created = random_date_within(180)
             c = Client(
-                telegram_id=tg_id,
+                telegram_id=random_telegram_id(),
                 tps_code=tps_code,
-                full_name=full_name,
-                phone=rand_phone_tj(),
-                address=random.choice([None, "Душанбе", "Худжанд", "Куляб", "Бохтар"]),
-                lang=random.choice(["ru", "tj", "uz"]),
-                status="active",
-                created_at=reg_date,
-                last_activity_at=rand_date(reg_date, NOW),
+                full_name=random_full_name(),
+                phone=random_phone(),
+                address=random.choice([None, "Душанбе", "Худжанд", "Бохтар", "Куляб"]),
+                lang=random.choice(["ru", "ru", "ru", "tj"]),
+                status=status,
+                created_at=created,
+                last_activity_at=created + timedelta(days=random.randint(0, 60)),
             )
+            session.add(c)
             clients.append(c)
-        random.choice(clients).status = "blocked"
-        random.choice(clients).status = "blocked"
-        db.add_all(clients)
-        await db.flush()
-        print(f"Clients: {len(clients)}")
+        await session.flush()
+        active_clients = [c for c in clients if c.status == "active"]
+        print(f"  Clients: {len(clients)} ({len(active_clients)} active)")
 
-        # ── China parcels (300) ──
-        china_parcels = []
-        track_ids_china = set()
-        for _ in range(300):
-            track = rand_track()
-            while track in track_ids_china:
-                track = rand_track()
-            track_ids_china.add(track)
+        # Parcels China
+        china_parcels: list[ParcelChina] = []
+        used_tracks: set[str] = set()
+        while len(china_parcels) < 85:
+            tr = random_track()
+            if tr in used_tracks:
+                continue
+            used_tracks.add(tr)
             p = ParcelChina(
-                track_id=track,
-                warehouse_id=random.choice(china_wh_ids),
-                created_by=china_admin_id,
-                created_at=rand_date(START, NOW - timedelta(days=2)),
+                track_id=tr,
+                warehouse_id=random.choice(china_whs).id,
+                created_by=random.choice([owner.id, staff_pool[1].id, staff_pool[4].id]),
+                created_at=random_date_within(90),
             )
+            session.add(p)
             china_parcels.append(p)
-        db.add_all(china_parcels)
-        await db.flush()
-        print(f"China parcels: {len(china_parcels)}")
+        await session.flush()
+        print(f"  ParcelsChina: {len(china_parcels)}")
 
-        # ── Dushanbe parcels (230 of the 300 arrived) ──
-        arrived_tracks = random.sample(china_parcels, 230)
-        dushanbe_parcels = []
-        for cp in arrived_tracks:
-            method = random.choices(["avia", "truck"], weights=[70, 30])[0]
-            weight = round(random.uniform(0.3, 25.0), 2)
-            volume = round(random.uniform(0.01, 2.0), 3) if method == "truck" else None
-            tariff = tariff_avia if method == "avia" else tariff_truck
-            if method == "avia":
-                amount = round(weight * float(tariff.price_per_kg), 2)
-            else:
-                by_kg = weight * float(tariff.price_per_kg)
-                by_m3 = float(volume or 0) * float(tariff.price_per_m3 or 0)
-                amount = round(max(by_kg, by_m3), 2)
-            arrival = cp.created_at + timedelta(days=random.randint(3, 18))
-            if arrival > NOW:
-                arrival = NOW - timedelta(hours=random.randint(1, 48))
-            client = random.choice(clients[:70])
-            p = ParcelDushanbe(
-                track_id=cp.track_id,
-                client_id=client.id,
-                status="received_dushanbe",
-                weight_kg=Decimal(str(weight)),
-                volume_m3=Decimal(str(volume)) if volume else None,
-                delivery_method=method,
-                warehouse_id=dushanbe_wh_id,
-                amount_due=Decimal(str(amount)),
-                tariff_snapshot=tariff.price_per_kg,
-                has_china_registration=True,
-                comment=random.choice(COMMENTS),
-                notified_at=arrival,
-                created_by=dushanbe_admin_id,
-                created_at=arrival,
-                updated_at=arrival,
+        # Parcels Dushanbe
+        dushanbe_parcels: list[ParcelDushanbe] = []
+        while len(dushanbe_parcels) < 85:
+            tr = random_track()
+            if tr in used_tracks:
+                continue
+            used_tracks.add(tr)
+            client = random.choice(active_clients)
+            method = random.choices(["avia", "truck"], weights=[0.4, 0.6], k=1)[0]
+            weight = Decimal(str(round(random.uniform(0.5, 30.0), 3)))
+            volume = (
+                Decimal(str(round(random.uniform(0.005, 0.5), 4)))
+                if method == "truck" else None
             )
+            tariff = tariff_avia if method == "avia" else tariff_truck
+
+            if method == "avia":
+                amount = (weight * tariff.price_per_kg).quantize(Decimal("0.01"))
+            else:
+                by_kg = weight * tariff.price_per_kg
+                by_m3 = (volume or Decimal("0")) * (tariff.price_per_m3 or Decimal("0"))
+                amount = max(by_kg, by_m3).quantize(Decimal("0.01"))
+
+            created_at = random_date_within(60)
+            status = random.choices(
+                ["received_dushanbe", "issued"], weights=[0.55, 0.45], k=1
+            )[0]
+            notified = (
+                created_at + timedelta(hours=random.randint(1, 48))
+                if random.random() < 0.85 else None
+            )
+
+            p = ParcelDushanbe(
+                track_id=tr,
+                client_id=client.id,
+                status=status,
+                weight_kg=weight,
+                volume_m3=volume,
+                delivery_method=method,
+                warehouse_id=random.choice(dushanbe_whs).id,
+                amount_due=amount,
+                tariff_snapshot=tariff.price_per_kg,
+                tariff_snapshot_data={
+                    "kg": str(tariff.price_per_kg),
+                    "m3": str(tariff.price_per_m3) if tariff.price_per_m3 else None,
+                    "currency": tariff.currency,
+                },
+                has_china_registration=random.random() < 0.7,
+                comment=random.choice([None, None, random.choice(CHINA_GOODS)]),
+                shelf=random.choice(
+                    [None, f"A{random.randint(1, 20)}", f"B{random.randint(1, 20)}"]
+                ),
+                notified_at=notified,
+                created_by=random.choice([owner.id, staff_pool[2].id, staff_pool[3].id]),
+                created_at=created_at,
+                updated_at=created_at,
+            )
+            session.add(p)
             dushanbe_parcels.append(p)
-        db.add_all(dushanbe_parcels)
-        await db.flush()
-        print(f"Dushanbe parcels: {len(dushanbe_parcels)}")
+        await session.flush()
+        issued = [p for p in dushanbe_parcels if p.status == "issued"]
+        print(f"  ParcelsDushanbe: {len(dushanbe_parcels)} ({len(issued)} issued)")
 
-        # ── Issue ~70% of dushanbe parcels ──
-        to_issue = random.sample(dushanbe_parcels, int(len(dushanbe_parcels) * 0.70))
-        by_client: dict[int, list] = {}
-        for p in to_issue:
-            by_client.setdefault(p.client_id, []).append(p)
+        # Issuance Orders + Items
+        by_client: dict[int, list[ParcelDushanbe]] = defaultdict(list)
+        for p in issued:
+            by_client[p.client_id].append(p)
 
-        issuance_count = 0
-        for cid, parcel_batch in by_client.items():
-            random.shuffle(parcel_batch)
-            batches = []
+        orders_n = 0
+        items_n = 0
+        for client_id, parcels in by_client.items():
             i = 0
-            while i < len(parcel_batch):
-                size = random.randint(1, 5)
-                batches.append(parcel_batch[i:i + size])
+            while i < len(parcels):
+                size = random.randint(1, 4)
+                chunk = parcels[i:i + size]
                 i += size
-
-            for batch in batches:
-                total_weight = sum(float(p.weight_kg) for p in batch)
-                total_amount = sum(float(p.amount_due or 0) for p in batch)
-                issue_date = max(p.created_at for p in batch) + timedelta(
-                    days=random.randint(1, 7)
+                if not chunk:
+                    continue
+                total_weight = sum((p.weight_kg for p in chunk), Decimal("0"))
+                total_amount = sum(
+                    (p.amount_due or Decimal("0") for p in chunk), Decimal("0")
                 )
-                if issue_date > NOW:
-                    issue_date = NOW - timedelta(hours=random.randint(1, 24))
-                pay_status = random.choices(["paid", "debt"], weights=[85, 15])[0]
-                pay_method = random.choice(["cash", "transfer"]) if pay_status == "paid" else None
-
+                issued_at = max(p.created_at for p in chunk) + timedelta(
+                    hours=random.randint(2, 72)
+                )
                 order = IssuanceOrder(
-                    client_id=cid,
-                    staff_id=random.choice([owner_id, dushanbe_admin_id]),
-                    total_weight=Decimal(str(round(total_weight, 3))),
-                    total_amount=Decimal(str(round(total_amount, 2))),
-                    payment_status=pay_status,
-                    payment_method=pay_method,
-                    issued_at=issue_date,
+                    client_id=client_id,
+                    staff_id=random.choice([owner.id, staff_pool[2].id]),
+                    total_weight=total_weight.quantize(Decimal("0.001")),
+                    total_amount=total_amount.quantize(Decimal("0.01")),
+                    payment_status=random.choices(
+                        ["paid", "debt"], weights=[0.85, 0.15], k=1
+                    )[0],
+                    payment_method=random.choice(["cash", "card", "transfer"]),
+                    comment=random.choice([None, "Выдан полностью", "Без чека"]),
+                    issued_at=issued_at,
                 )
-                db.add(order)
-                await db.flush()
-
-                for p in batch:
-                    tariff_rate = tariff_avia.price_per_kg if p.delivery_method == "avia" else tariff_truck.price_per_kg
+                session.add(order)
+                await session.flush()
+                for p in chunk:
                     item = IssuanceItem(
                         issuance_order_id=order.id,
                         parcel_id=p.id,
                         weight_kg=p.weight_kg,
                         volume_m3=p.volume_m3,
                         delivery_method=p.delivery_method,
-                        tariff_applied=tariff_rate,
+                        tariff_applied=p.tariff_snapshot or Decimal("0"),
+                        custom_price=None,
                         amount=p.amount_due or Decimal("0"),
+                        tariff_snapshot_data=p.tariff_snapshot_data,
                     )
-                    db.add(item)
-                    p.status = "issued"
-                    p.updated_at = issue_date
+                    session.add(item)
+                    items_n += 1
+                orders_n += 1
+        await session.flush()
+        print(f"  IssuanceOrders: {orders_n}, IssuanceItems: {items_n}")
 
-                issuance_count += 1
+        # Expenses
+        for _ in range(85):
+            category = random.choices(["avia", "truck"], weights=[0.3, 0.7], k=1)[0]
+            amount = Decimal(str(round(random.uniform(120, 8500), 2)))
+            comment = random.choice(
+                EXPENSE_COMMENTS_AVIA if category == "avia" else EXPENSE_COMMENTS_TRUCK
+            )
+            e = Expense(
+                amount=amount, category=category, comment=comment,
+                created_by=owner.id, created_at=random_date_within(120),
+            )
+            session.add(e)
+        await session.flush()
+        print("  Expenses: 85")
 
-        await db.flush()
-        print(f"Issuance orders: {issuance_count}")
+        # NotificationLogs
+        notified_parcels = [p for p in dushanbe_parcels if p.notified_at]
+        for p in notified_parcels[:80]:
+            log = NotificationLog(
+                client_id=p.client_id,
+                parcel_id=p.id,
+                notification_type="parcel_received",
+                status=random.choices(["sent", "sent", "sent", "failed"], k=1)[0],
+                error=None,
+                sent_at=p.notified_at,
+            )
+            session.add(log)
+        await session.flush()
+        print(f"  NotificationLogs: {min(80, len(notified_parcels))}")
 
-        # ── Unresolved parcels (8) ──
-        unresolved = []
-        for _ in range(8):
-            track = rand_track()
+        # Unresolved
+        for _ in range(12):
             u = UnresolvedParcel(
-                track_id=track,
-                raw_tps_code=f"TPS{random.randint(900, 999)}",
-                weight_kg=Decimal(str(round(random.uniform(0.5, 10.0), 2))),
-                delivery_method=random.choice(["avia", "truck"]),
+                track_id=random_track(),
+                raw_tps_code=f"TPS{random.randint(1, 999):03d}X",
+                weight_kg=Decimal(str(round(random.uniform(0.5, 25.0), 3))),
+                volume_m3=Decimal(str(round(random.uniform(0.01, 0.3), 4)))
+                if random.random() < 0.5 else None,
+                delivery_method=random.choice(["avia", "truck", None]),
+                comment="TPS-код не распознан",
                 resolved=False,
-                created_by=dushanbe_admin_id,
-                created_at=rand_date(NOW - timedelta(days=14), NOW),
+                created_by=staff_pool[2].id,
+                created_at=random_date_within(30),
             )
-            unresolved.append(u)
-        db.add_all(unresolved)
-        print(f"Unresolved: {len(unresolved)}")
+            session.add(u)
+        await session.flush()
+        print("  Unresolved: 12")
 
-        # ── Audit logs (180) ──
-        actions = [
-            ("create_parcel_china", "parcel"),
-            ("create_parcel_dushanbe", "parcel"),
-            ("issue_parcels", "issuance"),
-            ("update_status", "parcel"),
-            ("update_client", "client"),
-            ("block_client", "client"),
-            ("create_tariff", "tariff"),
-            ("update_warehouse", "warehouse"),
-            ("update_setting", "setting"),
-            ("reset_password", "staff"),
-        ]
-        audit_logs = []
-        for _ in range(180):
-            action, etype = random.choice(actions)
+        # Settings
+        for k, v in [
+            ("tariffs", "Авиа: 55 TJS/кг\nФура: 12.5 TJS/кг или 3200 TJS/м³\nСрок: 12-18 дней"),
+            ("support", "Поддержка: +992 900 11 22 33\nWhatsApp: +992 900 11 22 33\nEmail: support@tpscargo.tj"),
+            ("company_name", "TPS Cargo Tajikistan"),
+            ("currency", "TJS"),
+            ("channel_required", "false"),
+        ]:
+            exists = (await session.execute(
+                select(Setting).where(Setting.key == k)
+            )).scalar_one_or_none()
+            if exists:
+                continue
+            session.add(Setting(key=k, value=v, updated_by=owner.id))
+        await session.flush()
+        print("  Settings: 5")
+
+        # Audit logs
+        for _ in range(40):
             log = AuditLog(
-                staff_id=random.choice(staff_ids),
-                action=action,
-                entity_type=etype,
-                entity_id=random.randint(1, 230),
-                ip_address=random.choice(IPS),
-                created_at=rand_date(START, NOW),
+                staff_id=random.choice([owner.id, staff_pool[1].id, staff_pool[2].id]),
+                action=random.choice([
+                    "create_parcel", "issue_parcel", "update_client",
+                    "create_tariff", "delete_parcel",
+                ]),
+                entity_type=random.choice(["parcel", "client", "tariff", "issuance"]),
+                entity_id=random.randint(1, 80),
+                before_json=None,
+                after_json={"demo": True},
+                ip_address="127.0.0.1",
+                created_at=random_date_within(60),
             )
-            audit_logs.append(log)
-        db.add_all(audit_logs)
-        print(f"Audit logs: {len(audit_logs)}")
+            session.add(log)
+        await session.flush()
+        print("  AuditLogs: 40")
 
-        await db.commit()
-        print("\n=== Seed complete! ===")
-        print(f"  Clients:    {len(clients)}")
-        print(f"  China:      {len(china_parcels)}")
-        print(f"  Dushanbe:   {len(dushanbe_parcels)}")
-        print(f"  Issued:     {len(to_issue)} parcels in {issuance_count} orders")
-        print(f"  Unresolved: {len(unresolved)}")
-        print(f"  Audit:      {len(audit_logs)}")
+        await session.commit()
+        print("\n✅ Готово.")
+        print("\nДемо-логины для UI (пароль: Demo123!):")
+        print("  china_admin   — Админ Китай")
+        print("  ds_admin      — Админ Душанбе")
+        print("  operator1     — Сотрудник (выдача)")
+        print("  operator2     — Сотрудник (приёмка Китай)")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(seed())
