@@ -125,8 +125,10 @@ def random_full_name() -> str:
 
 
 def random_date_within(days_ago: int) -> datetime:
+    # Naive UTC — модели хранят DateTime без timezone, asyncpg откажется
+    # писать tz-aware значения в TIMESTAMP WITHOUT TIME ZONE.
     delta = timedelta(seconds=random.randint(0, days_ago * 86400))
-    return datetime.now(timezone.utc) - delta
+    return datetime.utcnow() - delta
 
 
 # ─── Сид ─────────────────────────────────────────────────────────────────────
