@@ -15,7 +15,7 @@ from app.models.staff import StaffUser
 from app.models.tariff import Tariff
 from app.schemas.issuance import IssuanceCreate, IssuanceItemResponse, IssuanceResponse
 from app.services.audit_service import log_action
-from app.api.deps import get_client_ip, require_role
+from app.api.deps import get_client_ip, require_role, to_naive_utc
 
 router = APIRouter(prefix="/api/issuance", tags=["issuance"])
 
@@ -211,14 +211,12 @@ async def list_issuance(
         query = query.where(
             IssuanceOrder.client_id == client_id,
         )
-    if date_from:
-        query = query.where(
-            IssuanceOrder.issued_at >= date_from,
-        )
-    if date_to:
-        query = query.where(
-            IssuanceOrder.issued_at <= date_to,
-        )
+    df = to_naive_utc(date_from)
+    dt_to = to_naive_utc(date_to)
+    if df:
+        query = query.where(IssuanceOrder.issued_at >= df)
+    if dt_to:
+        query = query.where(IssuanceOrder.issued_at <= dt_to)
     if search:
         s = search.strip()
         conditions = []

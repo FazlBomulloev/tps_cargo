@@ -11,7 +11,7 @@ from app.models.expense import Expense
 from app.models.staff import StaffUser
 from app.schemas.expense import ExpenseCreate, ExpenseResponse
 from app.services.audit_service import log_action
-from app.api.deps import get_client_ip, require_permission
+from app.api.deps import get_client_ip, require_permission, to_naive_utc
 
 router = APIRouter(prefix="/api/expenses", tags=["expenses"])
 
@@ -76,10 +76,12 @@ async def list_expenses(
     query = select(Expense).where(Expense.is_deleted.is_(False))
     if category and category in VALID_CATEGORIES:
         query = query.where(Expense.category == category)
-    if date_from:
-        query = query.where(Expense.created_at >= date_from)
-    if date_to:
-        query = query.where(Expense.created_at <= date_to)
+    df = to_naive_utc(date_from)
+    dt_to = to_naive_utc(date_to)
+    if df:
+        query = query.where(Expense.created_at >= df)
+    if dt_to:
+        query = query.where(Expense.created_at <= dt_to)
 
     # Используем один subquery и ссылаемся на его колонки — иначе
     # SQLAlchemy делает CROSS JOIN с основной таблицей и сумма

@@ -33,6 +33,7 @@ from app.api.deps import (
     get_current_user,
     require_permission,
     require_role,
+    to_naive_utc,
     verify_bot_secret,
 )
 
@@ -677,14 +678,12 @@ async def list_parcels(
             ParcelDushanbe.delivery_method
             == delivery_method,
         )
-    if date_from:
-        query = query.where(
-            ParcelDushanbe.created_at >= date_from,
-        )
-    if date_to:
-        query = query.where(
-            ParcelDushanbe.created_at <= date_to,
-        )
+    df = to_naive_utc(date_from)
+    dt_to = to_naive_utc(date_to)
+    if df:
+        query = query.where(ParcelDushanbe.created_at >= df)
+    if dt_to:
+        query = query.where(ParcelDushanbe.created_at <= dt_to)
 
     sub = query.subquery()
     total = (await db.execute(

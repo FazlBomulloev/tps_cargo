@@ -1,6 +1,7 @@
 import json
 import secrets
 from collections.abc import Callable
+from datetime import datetime, timezone
 
 from fastapi import Depends, HTTPException, Header, Request, status
 from fastapi.security import OAuth2PasswordBearer
@@ -70,6 +71,19 @@ def require_permission(perm: str) -> Callable:
 async def verify_bot_secret(x_bot_secret: str = Header(...)) -> None:
     if not secrets.compare_digest(x_bot_secret, settings.API_BOT_SECRET):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid bot secret")
+
+
+def to_naive_utc(dt: datetime | None) -> datetime | None:
+    """Колонки DateTime в моделях — TIMESTAMP WITHOUT TIME ZONE. Фронт
+    шлёт ISO-строки с суффиксом Z (tz-aware), asyncpg не сравнивает
+    tz-aware с naive — фильтры по датам молча возвращают пусто.
+    Нормализуем входящие даты в naive UTC, чтобы сравнение работало.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
 
 
 def get_client_ip(request: Request) -> str:
