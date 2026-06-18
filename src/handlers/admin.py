@@ -68,16 +68,21 @@ def _confirm_kb() -> InlineKeyboardMarkup:
     ])
 
 
-@router.message(Command("admin"), F.from_user.id.in_(ADMIN_IDS))
-async def cmd_admin(msg: Message, state: FSMContext, bot: Bot):
+async def show_admin_panel(bot: Bot, state: FSMContext, user_id: int) -> None:
+    """Открывает админ-меню в личке у user_id (используется и /admin, и /start)."""
     await state.clear()
     # Админ-панель и рассылка — только в личку, даже если команда
     # пришла из группы/канала, где состоит админ (BO-44).
     await bot.send_message(
-        msg.from_user.id,
+        user_id,
         "🛠 Админ-панель\n\nВыберите действие:",
         reply_markup=_admin_kb(),
     )
+
+
+@router.message(Command("admin"), F.from_user.id.in_(ADMIN_IDS))
+async def cmd_admin(msg: Message, state: FSMContext, bot: Bot):
+    await show_admin_panel(bot, state, msg.from_user.id)
 
 
 @router.callback_query(

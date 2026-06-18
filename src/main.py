@@ -3,6 +3,9 @@ import logging
 
 from aiogram import Bot, Dispatcher
 from aiogram.filters import CommandStart
+
+from src.config import ADMIN_IDS
+from src.handlers.admin import show_admin_panel
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
@@ -51,6 +54,9 @@ NOTIFY_SEND_DELAY = 0.05  # ~20 сообщений/сек — запас от л
 
 @dp.message(CommandStart())
 async def cmd_start(msg: Message, state: FSMContext):
+    if msg.from_user.id in ADMIN_IDS:
+        await show_admin_panel(bot, state, msg.from_user.id)
+        return
     await client_start_handler(msg, state, bot)
 
 
