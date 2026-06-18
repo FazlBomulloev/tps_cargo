@@ -1,3 +1,5 @@
+from html import escape as _html_escape
+
 from src.texts import get_text
 
 
@@ -279,12 +281,18 @@ def fmt_my_parcels(
 def fmt_warehouse_for_client(
     w, tps_code: str, name: str,
 ) -> str:
+    # Каждое поле — отдельный <code>-блок: один тап копирует значение
+    # целиком (телефон / регион / полный адрес с TPS-кодом). Имя
+    # склада и подпись остаются обычным текстом.
+    # ВАЖНО: parse_mode="HTML" при отправке (см. on_warehouse_select).
+    full_address = f"{w.address}{tps_code}"
     return (
-        f"📍 {w.name}\n"
+        f"📍 {_html_escape(w.name)}\n"
         "━━━━━━━━━━━━━━━\n"
-        "Заполните адрес в Pinduoduo:\n\n"
-        f"👤 {name}\n"
-        f"📞 {w.phone}\n"
-        f"🌏 {w.region}\n"
-        f"📍 {w.address}{tps_code}"
+        "Заполните адрес в Pinduoduo:\n"
+        "(нажмите на поле, чтобы скопировать)\n\n"
+        f"👤 <code>{_html_escape(name)}</code>\n"
+        f"📞 <code>{_html_escape(w.phone)}</code>\n"
+        f"🌏 <code>{_html_escape(w.region)}</code>\n"
+        f"📍 <code>{_html_escape(full_address)}</code>"
     )

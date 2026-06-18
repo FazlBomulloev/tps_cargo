@@ -615,6 +615,7 @@ async def on_warehouse_select(
             w, tps_code, name,
         ),
         reply_markup=client_main_kb(lang),
+        parse_mode="HTML",
     )
 
 
