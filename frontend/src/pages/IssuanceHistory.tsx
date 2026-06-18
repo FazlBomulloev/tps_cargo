@@ -34,20 +34,19 @@ export default function IssuanceHistory() {
 
   useEffect(() => { load(); }, [page, search, dateRange, sortBy, sortOrder]);
 
+  // Uncontrolled sorter: AntD ведёт визуальное состояние сам. Мы только
+  // слушаем onChange и отправляем sort_by/sort_order на бэк. С controlled
+  // sortOrder было рассинхрон между React state и AntD internal state —
+  // после нескольких кликов AntD «зацикливался» в одном направлении.
   const handleTableChange = (_pagination: any, _filters: any, sorter: any) => {
-    // Без sortDirections AntD циклирует asc→desc→null; на null state
-    // не меняется (если активная колонка совпадает с дефолтом) и таблица
-    // залипает. Поэтому ниже на колонках стоит sortDirections=[asc,desc],
-    // и sorter.order здесь всегда либо ascend, либо descend.
-    if (!sorter || !sorter.field || !sorter.order) return;
+    if (!sorter || !sorter.field) return;
     const field = sorter.field as typeof sortBy;
     if (!["id", "issued_at", "total_amount", "total_weight"].includes(field)) return;
-    setSortBy(field);
-    setSortOrder(sorter.order === "ascend" ? "asc" : "desc");
+    if (sorter.order) {
+      setSortBy(field);
+      setSortOrder(sorter.order === "ascend" ? "asc" : "desc");
+    }
   };
-
-  const sortOrderFor = (field: typeof sortBy) =>
-    sortBy === field ? (sortOrder === "asc" ? "ascend" : "descend") : null;
 
   return (
     <>
@@ -138,7 +137,6 @@ export default function IssuanceHistory() {
                 key: "id",
                 width: 110,
                 sorter: true,
-                sortOrder: sortOrderFor("id"),
                 sortDirections: ["ascend", "descend"],
                 render: (v: number) => `#${v}`,
               },
@@ -162,7 +160,6 @@ export default function IssuanceHistory() {
                 dataIndex: "total_weight",
                 key: "total_weight",
                 sorter: true,
-                sortOrder: sortOrderFor("total_weight"),
                 sortDirections: ["ascend", "descend"],
                 render: (v: number) => <WeightCell value={v} />,
               },
@@ -171,7 +168,6 @@ export default function IssuanceHistory() {
                 dataIndex: "total_amount",
                 key: "total_amount",
                 sorter: true,
-                sortOrder: sortOrderFor("total_amount"),
                 sortDirections: ["ascend", "descend"],
                 render: (v: number) => <MoneyCell value={v} />,
               },
@@ -197,7 +193,7 @@ export default function IssuanceHistory() {
                 dataIndex: "issued_at",
                 key: "issued_at",
                 sorter: true,
-                sortOrder: sortOrderFor("issued_at"),
+                defaultSortOrder: "descend",
                 sortDirections: ["ascend", "descend"],
                 render: (v: string) => v?.slice(0, 10),
               },
