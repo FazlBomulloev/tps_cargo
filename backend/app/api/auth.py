@@ -92,10 +92,14 @@ async def upload_avatar(
 from fastapi.responses import FileResponse
 
 @router.get("/avatars/{filename}")
-async def get_avatar(
-    filename: str,
-    current_user: StaffUser = Depends(get_current_user),
-):
+async def get_avatar(filename: str):
+    # Публичный GET без JWT: <img src="..."> в браузере не шлёт
+    # Authorization-заголовок, поэтому защищённый эндпоинт уронил
+    # бы все аватарки 401-м. Имя файла — {staff_id}_{8 hex}.{ext},
+    # 8 случайных hex-символов работают как unguessable token
+    # (≈4·10⁹ вариантов), а сам URL раздаётся только через
+    # /api/auth/me, который сам под JWT. Пути обхода каталога
+    # отсекаем явной нормализацией.
     safe = os.path.basename(filename)
     if safe != filename or ".." in safe or "/" in safe or "\\" in safe:
         raise HTTPException(status_code=400, detail="Invalid filename")
