@@ -281,11 +281,13 @@ def fmt_my_parcels(
 def fmt_warehouse_for_client(
     w, tps_code: str, name: str,
 ) -> str:
-    # Телефон + регион + полный адрес (с TPS-кодом) внутри одного
-    # <code>-блока: на мобильных клиентах тап по моноширинному тексту
-    # копирует всю сущность сразу (и на iOS, и на Android). <pre>
-    # копию по тапу не даёт — только long-press, поэтому остановились
-    # на <code> с переносами.
+    # Обёртка <pre><code class="language-...">…</code></pre> — это
+    # «полноценный» кодовый блок Telegram: и Desktop, и свежие
+    # iOS/Android рисуют его с встроенным виджетом копирования и
+    # одновременно сохраняют поведение <code>-сущности (тап по
+    # моноширинному тексту → «Скопировано»). Просто <code> теряет
+    # копию на десктопе, просто <pre> — на мобильных. Эта связка
+    # покрывает оба сценария.
     # ВАЖНО: parse_mode="HTML" при отправке (см. on_warehouse_select).
     full_address = f"{w.address}{tps_code}"
     copy_block = (
@@ -296,6 +298,7 @@ def fmt_warehouse_for_client(
     return (
         f"📍 {_html_escape(w.name)}\n"
         f"👤 {_html_escape(name)}\n\n"
-        f"<code>{copy_block}</code>\n\n"
+        f'<pre><code class="language-address">'
+        f"{copy_block}</code></pre>\n"
         "👆 нажмите чтобы скопировать"
     )
