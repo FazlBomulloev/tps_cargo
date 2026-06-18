@@ -20,6 +20,16 @@ from app.api.deps import get_client_ip, require_role, to_naive_utc
 router = APIRouter(prefix="/api/issuance", tags=["issuance"])
 
 
+def _sort_clause(sort_by: str, sort_order: str):
+    column = {
+        "id": IssuanceOrder.id,
+        "issued_at": IssuanceOrder.issued_at,
+        "total_amount": IssuanceOrder.total_amount,
+        "total_weight": IssuanceOrder.total_weight,
+    }.get(sort_by, IssuanceOrder.issued_at)
+    return column.desc() if sort_order == "desc" else column.asc()
+
+
 @router.post("", response_model=IssuanceResponse, status_code=201)
 async def create_issuance(
     body: IssuanceCreate,
@@ -201,6 +211,8 @@ async def list_issuance(
     search: str | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    sort_by: str = Query("issued_at", regex="^(id|issued_at|total_amount|total_weight)$"),
+    sort_order: str = Query("desc", regex="^(asc|desc)$"),
     db: AsyncSession = Depends(get_db),
     current_user: StaffUser = Depends(
         require_role("admin_dushanbe", "owner"),
@@ -258,7 +270,7 @@ async def list_issuance(
             joinedload(IssuanceOrder.client),
             joinedload(IssuanceOrder.items).joinedload(IssuanceItem.parcel),
         )
-        .order_by(IssuanceOrder.issued_at.desc())
+        .order_by(_sort_clause(sort_by, sort_order))
         .offset((page - 1) * per_page)
         .limit(per_page)
     )

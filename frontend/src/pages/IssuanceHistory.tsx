@@ -10,10 +10,17 @@ export default function IssuanceHistory() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs] | null>(null);
+  const [sortBy, setSortBy] = useState<"id" | "issued_at" | "total_amount" | "total_weight">("issued_at");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   const load = () => {
     setLoading(true);
-    const params: Record<string, unknown> = { page, per_page: 20 };
+    const params: Record<string, unknown> = {
+      page,
+      per_page: 20,
+      sort_by: sortBy,
+      sort_order: sortOrder,
+    };
     if (search.trim()) params.search = search.trim();
     if (dateRange) {
       params.date_from = dateRange[0].startOf("day").toISOString();
@@ -25,7 +32,25 @@ export default function IssuanceHistory() {
     });
   };
 
-  useEffect(() => { load(); }, [page, search, dateRange]);
+  useEffect(() => { load(); }, [page, search, dateRange, sortBy, sortOrder]);
+
+  const handleTableChange = (_pagination: any, _filters: any, sorter: any) => {
+    if (sorter && sorter.field) {
+      const next = sorter.order === "ascend" ? "asc" : "desc";
+      const field = sorter.field as typeof sortBy;
+      if (["id", "issued_at", "total_amount", "total_weight"].includes(field)) {
+        setSortBy(field);
+        setSortOrder(next);
+      }
+    } else {
+      // sorter clear
+      setSortBy("issued_at");
+      setSortOrder("desc");
+    }
+  };
+
+  const sortOrderFor = (field: typeof sortBy) =>
+    sortBy === field ? (sortOrder === "asc" ? "ascend" : "descend") : null;
 
   return (
     <>
@@ -59,6 +84,7 @@ export default function IssuanceHistory() {
             loading={loading}
             dataSource={data.items}
             rowKey="id"
+            onChange={handleTableChange}
             pagination={{
               current: page,
               total: data.total,
@@ -112,7 +138,10 @@ export default function IssuanceHistory() {
               {
                 title: "№ выдачи",
                 dataIndex: "id",
-                width: 90,
+                key: "id",
+                width: 110,
+                sorter: true,
+                sortOrder: sortOrderFor("id"),
                 render: (v: number) => `#${v}`,
               },
               {
@@ -133,11 +162,17 @@ export default function IssuanceHistory() {
               {
                 title: "Вес",
                 dataIndex: "total_weight",
+                key: "total_weight",
+                sorter: true,
+                sortOrder: sortOrderFor("total_weight"),
                 render: (v: number) => <WeightCell value={v} />,
               },
               {
                 title: "Сумма",
                 dataIndex: "total_amount",
+                key: "total_amount",
+                sorter: true,
+                sortOrder: sortOrderFor("total_amount"),
                 render: (v: number) => <MoneyCell value={v} />,
               },
               {
@@ -160,6 +195,9 @@ export default function IssuanceHistory() {
               {
                 title: "Дата",
                 dataIndex: "issued_at",
+                key: "issued_at",
+                sorter: true,
+                sortOrder: sortOrderFor("issued_at"),
                 render: (v: string) => v?.slice(0, 10),
               },
             ]}

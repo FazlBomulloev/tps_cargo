@@ -1,0 +1,1 @@
+import{az as t}from"./index-BywvUe3a.js";const s=()=>t.get("/tariffs/active"),i=a=>t.post("/tariffs",a);export{i as c,s as g};
