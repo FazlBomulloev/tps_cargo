@@ -619,11 +619,7 @@ async def on_warehouse_select(
     text, copy_payload = fmt_warehouse_for_client(
         w, tps_code, name,
     )
-    # На мобиле копирует тап по <code>-тексту; на десктопе тапа
-    # по тексту нет, поэтому к сообщению крепится Inline-кнопка
-    # с copy_text. Главное меню остаётся видимым — оно живёт в
-    # параллельном слое ReplyKeyboard и не сбрасывается при
-    # отправке сообщения с InlineKeyboardMarkup.
+    # Дублируем копию кнопкой: на десктопе тап по <code> не копирует.
     copy_kb = InlineKeyboardMarkup(
         inline_keyboard=[[
             InlineKeyboardButton(

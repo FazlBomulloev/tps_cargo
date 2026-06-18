@@ -118,7 +118,6 @@ export default function ParcelsList() {
               value={perPage}
               onChange={(v) => { setPerPage(v); setPage(1); }}
               style={{ width: 110 }}
-              // /api/parcels/all ограничен per_page<=100, 200 даст 422.
               options={[
                 { value: 20, label: "20 / стр" },
                 { value: 50, label: "50 / стр" },
@@ -158,9 +157,7 @@ export default function ParcelsList() {
                 title: "Трек",
                 dataIndex: "track_id",
                 render: (v: string, r: any) =>
-                  // Деталка существует только для записей из
-                  // parcels_dushanbe. У unresolved id из своей таблицы —
-                  // переход по /parcels/:id открыл бы чужую посылку.
+                  // unresolved id не из parcels_dushanbe — деталка открыла бы чужую посылку.
                   r.status === "in_china" || r.status === "unresolved" ? (
                     <TrackChip value={v} />
                   ) : (

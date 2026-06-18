@@ -281,14 +281,7 @@ def fmt_my_parcels(
 def fmt_warehouse_for_client(
     w, tps_code: str, name: str,
 ) -> tuple[str, str]:
-    # Возвращаем (текст_сообщения, plain_для_кнопки_копирования).
-    # Текст: <code> с переносами — на мобилe тап по моноширинному
-    # тексту копирует все три строки сразу. На десктопе <code> по
-    # клику не копируется, поэтому к сообщению прикручиваем
-    # InlineKeyboardButton с copy_text (см. on_warehouse_select).
-    # Plain — без HTML-эскейпа, ровно то, что попадёт в буфер
-    # обмена Telegram через copy_text.
-    # ВАЖНО: parse_mode="HTML" при отправке.
+    # plain — payload для InlineKeyboardButton.copy_text, без HTML-эскейпа.
     full_address = f"{w.address}{tps_code}"
     plain = f"{w.phone}\n{w.region}\n{full_address}"
     copy_block = (
