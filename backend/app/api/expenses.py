@@ -83,10 +83,7 @@ async def list_expenses(
     if dt_to:
         query = query.where(Expense.created_at <= dt_to)
 
-    # Используем один subquery и ссылаемся на его колонки — иначе
-    # SQLAlchemy делает CROSS JOIN с основной таблицей и сумма
-    # умножается на количество строк (баг был раньше: видно 2 строки
-    # на 21 TJS, total_sum показывал ~25 000 TJS).
+    # subquery с ссылками на c.amount — иначе CROSS JOIN и умножение суммы.
     subq = query.subquery()
     total = (await db.execute(
         select(func.count()).select_from(subq)
@@ -103,8 +100,7 @@ async def list_expenses(
     )
     rows = result.scalars().all()
 
-    # Подтягиваем ФИО сотрудников одним запросом, чтобы не делать
-    # N+1 по числу строк на странице.
+    # ФИО сотрудников одним запросом против N+1.
     staff_ids = {r.created_by for r in rows}
     staff_map: dict[int, str] = {}
     if staff_ids:

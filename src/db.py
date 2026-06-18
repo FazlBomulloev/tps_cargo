@@ -57,8 +57,7 @@ def _mask_db_url(url: str) -> str:
 
 
 def normalize_track(value: str) -> str:
-    # Mirror of backend/app/utils/track_normalize.py. Keep in sync manually
-    # until shared package is set up (see BE-023/BO-11/IN-03).
+    # Mirror of backend/app/utils/track_normalize.py — держать в sync вручную.
     value = str(value).upper().strip()
     return re.sub(r"[^A-Z0-9]+", "", value)
 
@@ -123,11 +122,7 @@ async def get_client(
 
 async def get_broadcast_recipients() -> list[int]:
     """Telegram-id всех клиентов, кому можно слать рассылку.
-    Исключаем status='deleted'; заблокированные остаются —
-    их Telegram-аккаунт сам отвергнет сообщение, и счётчик
-    fail на стороне рассылки это учтёт."""
-    # TODO(BO-29): заменить строковый литерал на ClientStatus.DELETED
-    # по всей базе кода, когда будет общий проход по статусам.
+    Исключаем deleted; blocked оставляем — Telegram сам отвергнет."""
     async with async_session() as s:
         result = await s.execute(
             select(Client.telegram_id).where(
@@ -268,11 +263,7 @@ async def find_in_unresolved(track: str) -> bool:
 
 
 async def get_unresolved_info(track: str) -> dict | None:
-    """Детали неопознанной посылки (уже в Душанбе) по треку:
-    дата Китая, дата прибытия, вес, ориентировочная цена.
-    None — если трека нет среди неразобранных.
-    # TODO: merge with get_parcels_by_client (BO-48) — большая часть
-    # логики (china_at/тариф/оценка суммы) повторяется."""
+    """Детали неопознанной посылки по треку или None."""
     code = normalize_track(track)
     async with async_session() as s:
         u = (await s.execute(
@@ -353,7 +344,6 @@ async def get_parcels_by_client(
         if not parcels:
             return []
 
-        # Дата принятия в Китае по track_id.
         track_ids = [p.track_id for p in parcels]
         china_rows = (await s.execute(
             select(
@@ -366,8 +356,7 @@ async def get_parcels_by_client(
         )).all()
         china_map = {t: c for t, c in china_rows}
 
-        # Дата выдачи — issued_at связанной выдачи (надёжнее,
-        # чем updated_at, который меняется при любой правке).
+        # issued_at из выдачи надёжнее updated_at (меняется на любой правке).
         issued_ids = [
             p.id for p in parcels if p.status == "issued"
         ]
@@ -390,8 +379,7 @@ async def get_parcels_by_client(
             for pid, issued_at in rows:
                 issued_map[pid] = issued_at
 
-        # Активные тарифы (последний по дате на метод) — для
-        # ориентировочной цены ещё не выданных посылок.
+        # Последний активный тариф на метод — для оценки невыданных.
         tariff_rows = (await s.execute(
             select(Tariff)
             .where(Tariff.is_active.is_(True))
@@ -408,8 +396,6 @@ async def get_parcels_by_client(
                 issued_at = (
                     issued_map.get(p.id) or p.updated_at
                 )
-            # Цена: зафиксированная (amount_due) либо, пока не
-            # выдана и не задана, ориентировочная по тарифу.
             est = None
             if p.amount_due is None and p.status != "issued":
                 est = _estimate_amount(

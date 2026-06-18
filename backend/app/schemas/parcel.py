@@ -33,8 +33,7 @@ class ParcelDushanbeCreate(BaseModel):
 
     @model_validator(mode="after")
     def _validate_truck_volume(self):
-        # Для truck тариф считается как max(byKg, byM3). Без объёма
-        # byM3 всегда 0, и итог молча падает до byKg — недосчёт денег.
+        # truck без volume_m3 → недосчёт денег в max(byKg, byM3).
         if self.delivery_method == "truck" and (
             self.volume_m3 is None or self.volume_m3 <= 0
         ):

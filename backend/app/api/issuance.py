@@ -48,9 +48,7 @@ async def create_issuance(
 
     custom_map = body.custom_prices or {}
 
-    # Блокируем строки посылок на время транзакции (row-level lock),
-    # чтобы два параллельных запроса на одну и ту же посылку не могли
-    # оба пройти проверку статуса и создать дублирующую выдачу.
+    # SELECT FOR UPDATE — защита от двойной выдачи при гонке.
     locked_parcels = (await db.execute(
         select(ParcelDushanbe)
         .where(ParcelDushanbe.id.in_(body.parcel_ids))
@@ -117,9 +115,7 @@ async def create_issuance(
 
         parcel.status = "issued"
         parcel.amount_due = amount
-        # IN-25: tariff_snapshot хранит только price_per_kg (legacy).
-        # tariff_snapshot_data — полный снапшот {kg, m3, currency},
-        # нужен для truck (price_per_m3 теряется в старом поле).
+        # tariff_snapshot — legacy (kg only); tariff_snapshot_data — полный.
         parcel.tariff_snapshot = tariff.price_per_kg
         parcel.tariff_snapshot_data = {
             "kg": str(tariff.price_per_kg),

@@ -60,10 +60,8 @@ async def cmd_start(msg: Message, state: FSMContext):
     await client_start_handler(msg, state, bot)
 
 
-# Фильтр на admin-id навешан на каждый admin-хендлер отдельно
-# (не на весь роутер), поэтому если админ — обычный
-# зарегистрированный клиент, его клиентские кнопки/FSM-состояния
-# падают в client_router как у любого пользователя.
+# admin-id фильтруется на каждом хендлере, а не на роутере, чтобы
+# админ как клиент попадал в client_router своими FSM-кнопками.
 dp.include_router(admin_router)
 dp.include_router(client_router)
 
@@ -76,11 +74,8 @@ async def notification_loop(bot: Bot, stop_event: asyncio.Event):
                 if stop_event.is_set():
                     break
                 try:
-                    # Сначала помечаем как уведомлённую и коммитим,
-                    # потом отправляем. Так при рестарте между шагами
-                    # не будет дублей (худший случай — клиент не
-                    # получит уведомление; компенсирующий ретрай —
-                    # отдельная задача, известное ограничение).
+                    # mark_notified до send: на рестарте между шагами
+                    # хуже всего — потерянное уведомление, не дубль.
                     await mark_notified(p["id"])
                     await bot.send_message(
                         chat_id=p["telegram_id"],

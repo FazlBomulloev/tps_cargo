@@ -5,9 +5,7 @@ export interface PermissionEntry {
   label: string;
 }
 
-// Единый источник правды для UI. Backend дублирует эти ключи в
-// VALID_PERMISSIONS (backend/app/api/staff.py) и отдаёт совпадающий
-// список через GET /api/staff/permissions/registry.
+// Дублирует backend VALID_PERMISSIONS — держать в sync.
 export const ALL_PERMISSIONS: readonly PermissionEntry[] = [
   { key: "dashboard", label: "Дашборд" },
   { key: "parcels_china", label: "Склад Китай" },

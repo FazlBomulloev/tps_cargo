@@ -38,8 +38,7 @@ log = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     Path("data").mkdir(exist_ok=True)
     Path("data/avatars").mkdir(exist_ok=True)
-    # Схема БД управляется только через Alembic (см. backend/alembic).
-    # Перед запуском приложения деплой обязан выполнить `alembic upgrade head`.
+    # Схема — только через Alembic; деплой обязан запускать `alembic upgrade head`.
     await _seed_owner()
     await _seed_warehouses()
     await _seed_tariffs()

@@ -6,9 +6,7 @@ export interface TrackChipProps {
   copyable?: boolean;
 }
 
-// navigator.clipboard.writeText доступен только в secure contexts
-// (https + localhost). На http по IP/домену он undefined, поэтому
-// используем fallback через скрытый textarea + execCommand("copy").
+// Clipboard API только в secure contexts; fallback на execCommand для http.
 async function copyText(value: string): Promise<boolean> {
   if (navigator.clipboard && window.isSecureContext) {
     try {

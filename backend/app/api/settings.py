@@ -15,9 +15,7 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 
 class SettingKey(StrEnum):
-    # IN-24: реально используемые ключи — tariffs/support (см.
-    # src/handlers/client.py: get_setting('tariffs'), get_setting('support')).
-    # Остальные зарезервированы под будущие настройки компании.
+    # Используются tariffs/support; остальные зарезервированы.
     COMPANY_NAME = "company_name"
     CURRENCY = "currency"
     CHANNEL_REQUIRED = "channel_required"

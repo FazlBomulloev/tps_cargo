@@ -18,14 +18,12 @@ export default function IssuanceHistory() {
   const loadingTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
-    // Отменяем предыдущий запрос — если пользователь быстро кликает по
-    // sorter, старые ответы перезапишут свежее состояние.
+    // Отменяем устаревший запрос, иначе старый ответ перезапишет свежий.
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
 
-    // Не показываем loading-оверлей мгновенно — он блокирует клики по
-    // заголовкам. Показываем только если запрос дольше 250 ms.
+    // Оверлей с задержкой 250 ms — иначе блокирует клики по заголовкам.
     if (loadingTimerRef.current) window.clearTimeout(loadingTimerRef.current);
     loadingTimerRef.current = window.setTimeout(() => setLoading(true), 250);
 
@@ -60,10 +58,7 @@ export default function IssuanceHistory() {
     };
   }, [page, perPage, search, dateRange, sortBy, sortOrder]);
 
-  // Uncontrolled sorter: AntD ведёт визуальное состояние сам. Мы только
-  // слушаем onChange и отправляем sort_by/sort_order на бэк. С controlled
-  // sortOrder было рассинхрон между React state и AntD internal state —
-  // после нескольких кликов AntD «зацикливался» в одном направлении.
+  // Uncontrolled sorter — controlled sortOrder зацикливался после 3 кликов.
   const handleTableChange = (_pagination: any, _filters: any, sorter: any) => {
     if (!sorter || !sorter.field) return;
     const field = sorter.field as typeof sortBy;

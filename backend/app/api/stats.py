@@ -53,14 +53,8 @@ async def overview(
 ):
     start, end = _resolve_range(period, from_date, to_date)
 
-    # Посылки в Китае: только те, что ещё НЕ доехали до Душанбе.
-    # «Доехала» = есть запись с тем же track_id либо в
-    # parcels_dushanbe (опознанная), либо в unresolved_parcels
-    # (неопознанная, resolved=false) — она физически уже в
-    # Душанбе. Иначе одна посылка считалась бы дважды
-    # (и в Китае, и в Душанбе).
-    # BE-20: EXISTS вместо NOT IN — NOT IN с подзапросом не использует
-    # индекс на track_id и считается построчно по всей правой таблице.
+    # Исключаем треки, физически добравшиеся до Душанбе (опознанные или нет),
+    # иначе посылка считается дважды. EXISTS — чтобы планировщик попал в индекс.
     dushanbe_track_exists = exists().where(
         ParcelDushanbe.track_id == ParcelChina.track_id,
         ParcelDushanbe.is_deleted.is_(False),
@@ -69,8 +63,7 @@ async def overview(
         UnresolvedParcel.track_id == ParcelChina.track_id,
         UnresolvedParcel.resolved.is_(False),
     )
-    # BE-19: china_count/dushanbe_count — остатки «на текущий момент»,
-    # а не «за период». _time_filter здесь не применяется намеренно.
+    # china_count/dushanbe_count — остатки на сейчас, не за период.
     china_count = (await db.execute(
         select(func.count(ParcelChina.id)).where(
             ParcelChina.is_deleted == False,
@@ -79,10 +72,6 @@ async def overview(
         )
     )).scalar() or 0
 
-    # Активные в Душанбе: ещё не выданные (status='received_dushanbe')
-    # плюс ещё не привязанные неопознанные (resolved=false). Выданные
-    # из этого счётчика исключаем — после оформления выдачи карточка
-    # должна «минусоваться».
     dushanbe_count = (await db.execute(
         select(func.count(ParcelDushanbe.id)).where(
             ParcelDushanbe.status == "received_dushanbe",
@@ -98,8 +87,7 @@ async def overview(
 
     dushanbe_count += unresolved_count_total
 
-    # unresolved_count «за период» — отдельно, нужен только для
-    # added_count (оборот), не для остатков выше.
+    # за период — только для added_count, не для остатков.
     unresolved_count = (await db.execute(
         select(func.count(UnresolvedParcel.id)).where(
             UnresolvedParcel.resolved.is_(False),
@@ -115,10 +103,6 @@ async def overview(
         )
     )).scalar() or 0
 
-    # «Добавлено за период» — суммарно принято в Китае и в Душанбе
-    # за выбранный промежуток (включая неопознанные, они физически
-    # тоже прибыли). Не пересекается с china_count/dushanbe_count
-    # (там — остатки), даёт оборот за период.
     china_added = (await db.execute(
         select(func.count(ParcelChina.id)).where(
             ParcelChina.is_deleted == False,
@@ -145,9 +129,7 @@ async def overview(
         select(func.sum(IssuanceOrder.total_amount)).where(*_time_filter(IssuanceOrder.issued_at, start, end))
     )).scalar() or 0
 
-    # Расходы за период вычитаются из общей выручки. Если категория
-    # совпадает с delivery_method выдачи (avia/truck) — также из
-    # разбивки по способу. Так дашборд показывает «чистую» выручку.
+    # Расходы вычитаются из gross_revenue → revenue. По категории — из net_by_method.
     expense_rows = (await db.execute(
         select(
             Expense.category,
@@ -159,10 +141,7 @@ async def overview(
         )
         .group_by(Expense.category)
     )).all()
-    # Decimal держим до самого конца расчёта, чтобы не накапливать
-    # ошибку округления float. В JSON отдаём через quantize(0.01)
-    # перед float — совместимо с фронтом (число), но без потери
-    # точности на промежуточных шагах.
+    # Decimal до конца расчётов, float только на выходе через quantize(0.01).
     expense_by_category_dec = {
         c: Decimal(str(s)) for c, s in expense_rows
     }
@@ -185,8 +164,6 @@ async def overview(
         select(func.count(Client.id)).where(*_time_filter(Client.created_at, start, end))
     )).scalar() or 0
 
-    # Разбивка выручки по способу доставки (для тултипа на
-    # карточке «Выручка»): суммы выданных позиций авиа/фура.
     revenue_rows = (await db.execute(
         select(
             IssuanceItem.delivery_method,
@@ -199,15 +176,12 @@ async def overview(
         .where(*_time_filter(IssuanceOrder.issued_at, start, end))
         .group_by(IssuanceItem.delivery_method)
     )).all()
-    # BE-18: gross — валовая выручка по методу, без вычета расходов.
     gross_revenue_by_method_dec = {m: Decimal(str(s)) for m, s in revenue_rows}
     gross_revenue_by_method = {
         m: _q(v) for m, v in gross_revenue_by_method_dec.items()
     }
-    # net — после вычета расходов той же категории. Если по методу не
-    # было выдач (gross=0), но есть расходы — не показываем отрицательную
-    # «выручку»: это уже не revenue, а чистый убыток за период, и его
-    # есть отдельно total_expenses/expense_by_category.
+    # net = gross − расходы той же категории. Если по методу не было выдач,
+    # отрицательную «выручку» не показываем — убыток уходит в expense_by_category.
     net_revenue_by_method_dec = {}
     for cat, exp_dec in expense_by_category_dec.items():
         if cat in gross_revenue_by_method_dec:
@@ -217,10 +191,8 @@ async def overview(
     for m, v in gross_revenue_by_method_dec.items():
         net_revenue_by_method_dec.setdefault(m, v)
     net_revenue_by_method = {m: _q(v) for m, v in net_revenue_by_method_dec.items()}
-    # Обратная совместимость со старым полем revenue_by_method (фронт).
-    revenue_by_method = net_revenue_by_method
+    revenue_by_method = net_revenue_by_method  # legacy alias
 
-    # Разбивка зарегистрированного веса по способу доставки.
     weight_rows = (await db.execute(
         select(
             ParcelDushanbe.delivery_method,

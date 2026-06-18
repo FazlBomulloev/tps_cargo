@@ -71,8 +71,7 @@ def _confirm_kb() -> InlineKeyboardMarkup:
 async def show_admin_panel(bot: Bot, state: FSMContext, user_id: int) -> None:
     """Открывает админ-меню в личке у user_id (используется и /admin, и /start)."""
     await state.clear()
-    # Админ-панель и рассылка — только в личку, даже если команда
-    # пришла из группы/канала, где состоит админ (BO-44).
+    # Только в личку — даже если команда пришла из группы.
     await bot.send_message(
         user_id,
         "🛠 Админ-панель\n\nВыберите действие:",
@@ -136,8 +135,7 @@ async def on_broadcast_content(
     )
     await state.set_state(BroadcastSG.confirm)
 
-    # Превью — себе же, чтобы админ увидел, что именно уйдёт.
-    await bot.copy_message(
+    await bot.copy_message(  # превью админу
         chat_id=msg.chat.id,
         from_chat_id=msg.chat.id,
         message_id=msg.message_id,
@@ -187,9 +185,6 @@ async def cb_confirm_broadcast(
     sent = 0
     failed = 0
     blocked = 0
-    # copy_message переносит любой тип контента (текст / медиа /
-    # стикер / video_note / voice / документ / GIF) с подписью.
-    # Это проще и универсальнее, чем разбирать тип вручную.
     for tid in recipients:
         try:
             await bot.copy_message(
@@ -219,11 +214,6 @@ async def cb_confirm_broadcast(
                     tid, retry_e,
                 )
         except TelegramForbiddenError:
-            # Клиент заблокировал бота. Поле для статуса "blocked"
-            # отдельной колонкой не вводим (миграции — отдельная
-            # задача) — используем существующее Client.status.
-            # TODO: если понадобится более гранулярный статус
-            # (a-la "blocked" vs "deleted"), нужна отдельная миграция.
             blocked += 1
             log.info(
                 "Рассылка: получатель %s заблокировал бота", tid,
@@ -238,9 +228,7 @@ async def cb_confirm_broadcast(
             log.warning(
                 "Рассылка: ошибка API Telegram для %s: %s", tid, e,
             )
-        # ~30 сообщений/сек — глобальный лимит Telegram. Держим
-        # запас: 20/сек = 50 мс между отправками.
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.05)  # ~20/сек, запас от лимита Telegram
 
     try:
         await progress.edit_text(

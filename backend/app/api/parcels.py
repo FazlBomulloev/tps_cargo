@@ -131,7 +131,6 @@ async def list_china(
 ):
     query = select(ParcelChina).where(ParcelChina.is_deleted == False)
     if q:
-        # Поиск по трек-коду (нормализуем под формат хранения).
         term = normalize_track(q)
         if term:
             query = query.where(ParcelChina.track_id.ilike(f"%{term}%"))
@@ -280,8 +279,7 @@ async def add_dushanbe_bulk(
             detail="delivery_method must be 'avia' or 'truck'",
         )
 
-    # Клиент резолвится один раз — TPS общий на всю партию.
-    tps = (body.tps_code or "").strip().upper()
+    tps = (body.tps_code or "").strip().upper()  # один TPS на всю партию
     client = None
     if tps:
         client = (await db.execute(
@@ -298,8 +296,6 @@ async def add_dushanbe_bulk(
         if not track:
             continue
 
-        # TPS пуст или клиент не найден -> неразобранное
-        # (как в одиночном add_dushanbe).
         if not tps or client is None:
             db.add(UnresolvedParcel(
                 track_id=track,
@@ -313,7 +309,6 @@ async def add_dushanbe_bulk(
             unresolved_list.append(track)
             continue
 
-        # Дубликат трека: уже в этой партии или в БД.
         if track in seen:
             duplicates.append(track)
             continue
@@ -393,8 +388,7 @@ async def delete_dushanbe(
         raise HTTPException(
             status_code=404, detail="Посылка не найдена"
         )
-    # Выданные посылки не удаляем: они уже учтены в выдаче и
-    # отчётности, мягкое удаление исказило бы историю.
+    # Выданные не удаляем — учтены в выдаче и отчётности.
     if parcel.status == "issued":
         raise HTTPException(
             status_code=400,
@@ -469,9 +463,7 @@ async def list_all_parcels(
     db: AsyncSession = Depends(get_db),
     current_user: StaffUser = Depends(require_role("admin_china", "admin_dushanbe", "owner")),
 ):
-    # Поиск по ФИО / TPS / трек-коду. Имя/TPS ищем по клиенту,
-    # трек — по нормализованному коду. norm пуст -> запрос без
-    # букв/цифр трека (т.е. по имени) -> по Китаю не ищем.
+    # Если norm пуст → ищут по имени/TPS, в Китае искать нечего.
     term = (q or "").strip()
     norm = normalize_track(term) if term else ""
 
@@ -535,7 +527,6 @@ async def list_all_parcels(
 
     if status_filter == "in_china":
         if term and not norm:
-            # Поиск по имени/TPS — в Китае искать нечего.
             return {"items": [], "total": 0, "page": page, "pages": 1}
         query = select(ParcelChina).where(ParcelChina.is_deleted == False)
         if term and norm:
@@ -564,8 +555,7 @@ async def list_all_parcels(
         return {"items": all_items[start:start + per_page], "total": total, "page": page, "pages": pages}
 
     if status_filter == "dushanbe":
-        # «Физически в Душанбе»: принятые (received_dushanbe)
-        # + неопознанные (resolved=false).
+        # received_dushanbe + неопознанные.
         all_items = await _dushanbe_items(
             db,
             select(ParcelDushanbe).where(
@@ -591,9 +581,7 @@ async def list_all_parcels(
         start = (page - 1) * per_page
         return {"items": all_items[start:start + per_page], "total": total, "page": page, "pages": pages}
 
-    # No filter — combine China + Dushanbe + Unresolved
     all_items = []
-    # Китай в общий список — кроме поиска по имени/TPS.
     if not (term and not norm):
         china_query = select(ParcelChina).where(
             ParcelChina.is_deleted == False
@@ -649,7 +637,6 @@ async def list_parcels(
         ParcelDushanbe.is_deleted == False
     )
     if q:
-        # Поиск по трек-коду, ФИО или TPS-коду клиента.
         term = q.strip()
         conds = []
         norm = normalize_track(term)
@@ -746,8 +733,7 @@ async def search_by_track(
         )
     )).scalar_one_or_none()
     if unresolved:
-        # Трек уже в Душанбе, но ещё не привязан к клиенту
-        # (обрабатывается на месте).
+        # Прибыл в Душанбе, но не привязан к клиенту.
         return {
             "location": "dushanbe",
             "status": "processing",
@@ -791,7 +777,6 @@ async def my_parcels(
     )
     parcels = list(result.scalars().all())
 
-    # Дата принятия в Китае по track_id (одним запросом).
     track_ids = [p.track_id for p in parcels]
     china_map: dict[str, datetime] = {}
     if track_ids:
@@ -804,12 +789,7 @@ async def my_parcels(
         )
         china_map = {t: c for t, c in china_rows.all()}
 
-    # Дата выдачи для выданных посылок. Источник — issued_at
-    # связанной выдачи (issuance_orders): это фактический момент
-    # выдачи и он не меняется при последующих правках посылки,
-    # в отличие от parcels_dushanbe.updated_at (обновляется при
-    # любом изменении). updated_at используем лишь как запасной
-    # вариант, если позиция выдачи не найдена.
+    # issued_at из issuance_orders фиксирован, updated_at — только запасной.
     issued_ids = [p.id for p in parcels if p.status == "issued"]
     issued_map: dict[int, datetime] = {}
     if issued_ids:
@@ -937,10 +917,7 @@ async def update_parcel(
         )
     update_fields = body.model_dump(exclude_unset=True)
 
-    # Если итоговый delivery_method (новый или текущий) — truck,
-    # итоговый volume_m3 (новый или текущий) обязателен и > 0.
-    # Иначе amount_by_m3=0 и тариф молча падает до amount_by_kg
-    # при следующей выдаче (недосчёт денег).
+    # truck без volume_m3 → amount_by_m3=0 и недосчёт денег при выдаче.
     final_method = update_fields.get("delivery_method", parcel.delivery_method)
     final_volume = update_fields.get("volume_m3", parcel.volume_m3)
     if final_method == "truck" and (final_volume is None or final_volume <= 0):

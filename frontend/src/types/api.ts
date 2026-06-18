@@ -1,6 +1,3 @@
-// Money/Weight/Volume are aliased to `number` for now. Backend may send
-// Decimal fields as string or number (see BE-044); change the alias here
-// if/when that's normalized, instead of touching every call site.
 export type Money = number;
 export type Weight = number;
 export type Volume = number;
@@ -9,8 +6,7 @@ export type ParcelStatus = "in_china" | "received_dushanbe" | "issued" | "unreso
 export type DeliveryMethod = "avia" | "truck";
 export type Role = "owner" | "admin_china" | "admin_dushanbe" | "staff";
 
-// Mirrors backend VALID_PERMISSIONS (backend/app/api/staff.py) and the
-// frontend registry in utils/permissions.ts. Keep all three in sync.
+// Mirror backend VALID_PERMISSIONS + utils/permissions.ts.
 export type PermissionKey =
   | "dashboard"
   | "parcels_china"

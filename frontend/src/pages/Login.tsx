@@ -21,10 +21,7 @@ export default function Login() {
     try {
       const { data } = await login(values.login, values.password);
       const token = data.access_token;
-      // Запрашиваем профиль с явным токеном (минуя общий api-клиент,
-      // который читает токен из store) — store обновляем один раз,
-      // только когда у нас уже есть и token, и user, без промежуточных
-      // частично-авторизованных состояний.
+      // Явный token минуя api-клиент: store обновляем атомарно (token+user).
       const { data: user } = await axios.get("/api/auth/me", {
         headers: { Authorization: `Bearer ${token}` },
       });

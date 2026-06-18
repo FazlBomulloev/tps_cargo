@@ -78,8 +78,7 @@ class EditProfileStates(StatesGroup):
 # ── Helpers ──
 
 _LANG_CACHE_TTL = 300  # 5 минут
-# Кэш (lang, tps_code) по telegram_id — снимает N+1 на get_client
-# в _ensure_state при каждом нажатии кнопки меню (BO-19).
+# lang+tps_code по telegram_id — снимает N+1 на _ensure_state.
 _client_cache: dict[int, tuple[str, str, float]] = {}
 
 
@@ -88,8 +87,6 @@ async def _get_lang(state: FSMContext) -> str:
     lang = data.get("lang")
     if lang:
         return lang
-    # До регистрации (язык ещё не выбран/не сохранён в FSM) лучше
-    # подсказать Telegram-локалью клиента, чем хардкодить "ru" (BO-36).
     return "ru"
 
 
@@ -131,7 +128,7 @@ if REDIS_URL:
 else:
     _redis = None
 
-# Фоллбэк-кэш, если Redis не настроен (TTL-словарь в памяти процесса).
+# Фоллбэк-кэш, если Redis не настроен.
 _sub_cache: dict[int, tuple[bool, float]] = {}
 
 
@@ -149,8 +146,7 @@ async def _real_check_sub(
             "member", "administrator", "creator",
         )
     except (TelegramForbiddenError, TelegramNotFound) as e:
-        # Бот не имеет доступа к каналу (не админ/каналу не существует) —
-        # не блокируем пользователя из-за ошибки конфигурации бота.
+        # Бот не имеет доступа к каналу — не блокируем пользователя.
         log.warning(
             "Нет доступа к каналу при проверке подписки %s: %s",
             user_id, e,

@@ -98,11 +98,7 @@ async def search_clients(
     db: AsyncSession = Depends(get_db),
     current_user: StaffUser = Depends(require_role("admin_dushanbe", "owner")),
 ):
-    # Клиенты, у которых есть посылка с таким трек-кодом
-    # (поиск по треку наравне с TPS/телефоном/ФИО). Треки в БД
-    # хранятся уже нормализованными (см. normalize_track), поэтому
-    # пользовательский ввод приводим к тому же виду — иначе пробелы,
-    # тире и регистр ломают ilike.
+    # Нормализуем под формат хранения треков (пробелы/регистр ломают ilike).
     norm = normalize_track(q)
     # Uses gin_trgm_ops indexes ix_clients_*_trgm
     conditions = [

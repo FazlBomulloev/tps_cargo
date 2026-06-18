@@ -16,8 +16,7 @@ const statusLabels: Record<string, string> = {
   unresolved: "Неопознанные",
   dushanbe: "В Душанбе (принятые + неопознанные)",
 };
-// Значения для выпадающего фильтра (без комбинированного
-// «dushanbe» — он приходит ссылкой с дашборда).
+// «dushanbe» появляется только по ссылке с дашборда — не в выпадашке.
 const FILTER_OPTIONS = [
   "in_china",
   "received_dushanbe",
