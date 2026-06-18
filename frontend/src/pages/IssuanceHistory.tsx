@@ -8,6 +8,7 @@ import { PageHeader, MoneyCell, WeightCell, TrackChip } from "../components/ui";
 export default function IssuanceHistory() {
   const [data, setData] = useState<any>({ items: [], total: 0 });
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(20);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs] | null>(null);
@@ -30,7 +31,7 @@ export default function IssuanceHistory() {
 
     const params: Record<string, unknown> = {
       page,
-      per_page: 20,
+      per_page: perPage,
       sort_by: sortBy,
       sort_order: sortOrder,
     };
@@ -57,7 +58,7 @@ export default function IssuanceHistory() {
       controller.abort();
       if (loadingTimerRef.current) window.clearTimeout(loadingTimerRef.current);
     };
-  }, [page, search, dateRange, sortBy, sortOrder]);
+  }, [page, perPage, search, dateRange, sortBy, sortOrder]);
 
   // Uncontrolled sorter: AntD ведёт визуальное состояние сам. Мы только
   // слушаем onChange и отправляем sort_by/sort_order на бэк. С controlled
@@ -109,8 +110,13 @@ export default function IssuanceHistory() {
             pagination={{
               current: page,
               total: data.total,
-              pageSize: 20,
-              onChange: setPage,
+              pageSize: perPage,
+              showSizeChanger: true,
+              pageSizeOptions: ["20", "50", "100"],
+              onChange: (p, ps) => {
+                setPage(p);
+                if (ps !== perPage) setPerPage(ps);
+              },
               showTotal: (total) => `Всего: ${total}`,
             }}
             expandable={{

@@ -7,13 +7,14 @@ import { PageHeader, EmptyState } from "../components/ui";
 export default function Clients() {
   const [data, setData] = useState<any>({ items: [], total: 0 });
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(20);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    getClients({ page, per_page: 20, q: search || undefined })
+    getClients({ page, per_page: perPage, q: search || undefined })
       .then((r) => {
         if (!cancelled) setData(r.data);
       })
@@ -26,7 +27,7 @@ export default function Clients() {
     return () => {
       cancelled = true;
     };
-  }, [page, search]);
+  }, [page, perPage, search]);
 
   return (
     <>
@@ -53,8 +54,13 @@ export default function Clients() {
             pagination={{
               current: page,
               total: data.total,
-              pageSize: 20,
-              onChange: setPage,
+              pageSize: perPage,
+              showSizeChanger: true,
+              pageSizeOptions: ["20", "50", "100"],
+              onChange: (p, ps) => {
+                setPage(p);
+                if (ps !== perPage) setPerPage(ps);
+              },
               showTotal: (total) => `Всего: ${total}`,
             }}
             columns={[

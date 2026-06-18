@@ -16,6 +16,7 @@ export default function ParcelsChina() {
   const [parcels, setParcels] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(20);
   const [search, setSearch] = useState("");
   const [tableLoading, setTableLoading] = useState(false);
   const inputRef = useRef<any>(null);
@@ -41,7 +42,7 @@ export default function ParcelsChina() {
     setTableLoading(true);
     getChinaParcels({
       page,
-      per_page: 20,
+      per_page: perPage,
       q: search.trim() || undefined,
     })
       .then(({ data }) => {
@@ -58,7 +59,7 @@ export default function ParcelsChina() {
     return () => {
       cancelled = true;
     };
-  }, [page, search, reloadCounter]);
+  }, [page, perPage, search, reloadCounter]);
 
   const triggerReload = () => {
     if (page !== 1) setPage(1);
@@ -229,10 +230,14 @@ export default function ParcelsChina() {
             loading={tableLoading}
             pagination={{
               current: page,
-              pageSize: 20,
+              pageSize: perPage,
               total,
-              onChange: (p) => setPage(p),
-              showSizeChanger: false,
+              showSizeChanger: true,
+              pageSizeOptions: ["20", "50", "100"],
+              onChange: (p, ps) => {
+                setPage(p);
+                if (ps !== perPage) setPerPage(ps);
+              },
               showTotal: (t) => `Всего: ${t}`,
             }}
             columns={[

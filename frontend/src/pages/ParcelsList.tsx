@@ -118,11 +118,11 @@ export default function ParcelsList() {
               value={perPage}
               onChange={(v) => { setPerPage(v); setPage(1); }}
               style={{ width: 110 }}
+              // /api/parcels/all ограничен per_page<=100, 200 даст 422.
               options={[
                 { value: 20, label: "20 / стр" },
                 { value: 50, label: "50 / стр" },
                 { value: 100, label: "100 / стр" },
-                { value: 200, label: "200 / стр" },
               ]}
             />
           </Space>
@@ -134,13 +134,22 @@ export default function ParcelsList() {
           <Table
             loading={loading}
             dataSource={data.items}
-            rowKey={(r) => `${r.status === "in_china" ? "c" : "d"}_${r.id}`}
+            rowKey={(r) =>
+              `${
+                r.status === "in_china"
+                  ? "c"
+                  : r.status === "unresolved"
+                  ? "u"
+                  : "d"
+              }_${r.id}`
+            }
             virtual={perPage >= 100}
             scroll={perPage >= 100 ? { y: 600, x: "max-content" } : undefined}
             pagination={{
               current: page,
               total: data.total,
               pageSize: perPage,
+              showSizeChanger: false,
               onChange: setPage,
               showTotal: (total) => `Всего: ${total}`,
             }}
@@ -149,12 +158,15 @@ export default function ParcelsList() {
                 title: "Трек",
                 dataIndex: "track_id",
                 render: (v: string, r: any) =>
-                  r.status !== "in_china" ? (
+                  // Деталка существует только для записей из
+                  // parcels_dushanbe. У unresolved id из своей таблицы —
+                  // переход по /parcels/:id открыл бы чужую посылку.
+                  r.status === "in_china" || r.status === "unresolved" ? (
+                    <TrackChip value={v} />
+                  ) : (
                     <Link to={`/parcels/${r.id}`}>
                       <TrackChip value={v} copyable={false} />
                     </Link>
-                  ) : (
-                    <TrackChip value={v} />
                   ),
               },
               {
