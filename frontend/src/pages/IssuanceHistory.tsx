@@ -68,28 +68,44 @@ export default function IssuanceHistory() {
             }}
             expandable={{
               expandedRowRender: (record: any) => (
-                <Table
-                  dataSource={record.items}
-                  rowKey="id"
-                  size="small"
-                  pagination={false}
-                  columns={[
-                    {
-                      title: "Трек-код",
-                      dataIndex: "track_id",
-                      render: (v: string, r: any) =>
-                        v ? <TrackChip value={v} /> : <span>{`#${r.parcel_id}`}</span>,
-                    },
-                    { title: "Вес", dataIndex: "weight_kg", render: (v: number) => <WeightCell value={v} /> },
-                    { title: "Метод", dataIndex: "delivery_method" },
-                    { title: "Тариф", dataIndex: "tariff_applied", render: (v: number) => <MoneyCell value={v} /> },
-                    {
-                      title: "Сумма",
-                      dataIndex: "amount",
-                      render: (v: number) => <MoneyCell value={v} />,
-                    },
-                  ]}
-                />
+                <div style={{ padding: "8px 0" }}>
+                  {record.comment && (
+                    <div style={{
+                      marginBottom: 12,
+                      padding: "10px 14px",
+                      background: "#FFFBEF",
+                      borderLeft: "3px solid #FFAB00",
+                      borderRadius: 4,
+                      fontSize: 13,
+                      whiteSpace: "pre-wrap",
+                    }}>
+                      <span style={{ fontWeight: 600, color: "#637381", marginRight: 6 }}>Комментарий:</span>
+                      {record.comment}
+                    </div>
+                  )}
+                  <Table
+                    dataSource={record.items}
+                    rowKey="id"
+                    size="small"
+                    pagination={false}
+                    columns={[
+                      {
+                        title: "Трек-код",
+                        dataIndex: "track_id",
+                        render: (v: string, r: any) =>
+                          v ? <TrackChip value={v} /> : <span>{`#${r.parcel_id}`}</span>,
+                      },
+                      { title: "Вес", dataIndex: "weight_kg", render: (v: number) => <WeightCell value={v} /> },
+                      { title: "Метод", dataIndex: "delivery_method" },
+                      { title: "Тариф", dataIndex: "tariff_applied", render: (v: number) => <MoneyCell value={v} /> },
+                      {
+                        title: "Сумма",
+                        dataIndex: "amount",
+                        render: (v: number) => <MoneyCell value={v} />,
+                      },
+                    ]}
+                  />
+                </div>
               ),
             }}
             columns={[

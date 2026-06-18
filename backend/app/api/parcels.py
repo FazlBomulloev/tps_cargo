@@ -855,6 +855,35 @@ async def get_parcel(
     return parcel
 
 
+@router.get("/{parcel_id}/issuance")
+async def get_parcel_issuance(
+    parcel_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: StaffUser = Depends(require_role("admin_dushanbe", "owner")),
+):
+    from app.models.issuance import IssuanceItem, IssuanceOrder
+
+    item_res = await db.execute(
+        select(IssuanceItem).where(IssuanceItem.parcel_id == parcel_id)
+    )
+    item = item_res.scalar_one_or_none()
+    if not item:
+        return None
+    order = await db.get(IssuanceOrder, item.issuance_order_id)
+    if not order:
+        return None
+    return {
+        "order_id": order.id,
+        "comment": order.comment,
+        "issued_at": order.issued_at,
+        "payment_status": order.payment_status,
+        "payment_method": order.payment_method,
+        "total_amount": float(order.total_amount or 0),
+        "custom_price": float(item.custom_price) if item.custom_price is not None else None,
+        "amount": float(item.amount or 0),
+    }
+
+
 @router.patch("/{parcel_id}/status", response_model=ParcelDushanbeResponse)
 async def update_status(
     parcel_id: int,
