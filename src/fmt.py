@@ -281,18 +281,23 @@ def fmt_my_parcels(
 def fmt_warehouse_for_client(
     w, tps_code: str, name: str,
 ) -> str:
-    # Каждое поле — отдельный <code>-блок: один тап копирует значение
-    # целиком (телефон / регион / полный адрес с TPS-кодом). Имя
-    # склада и подпись остаются обычным текстом.
+    # Телефон + регион + полный адрес (с TPS-кодом) — один <pre>-блок:
+    # тап копирует все три строки разом, чтобы вставить в адресное
+    # поле Pinduoduo одним действием. Имя — обычный текст, не
+    # копируется отдельно.
     # ВАЖНО: parse_mode="HTML" при отправке (см. on_warehouse_select).
     full_address = f"{w.address}{tps_code}"
+    copy_block = (
+        f"{_html_escape(w.phone)}\n"
+        f"{_html_escape(w.region)}\n"
+        f"{_html_escape(full_address)}"
+    )
     return (
         f"📍 {_html_escape(w.name)}\n"
         "━━━━━━━━━━━━━━━\n"
         "Заполните адрес в Pinduoduo:\n"
-        "(нажмите на поле, чтобы скопировать)\n\n"
-        f"👤 <code>{_html_escape(name)}</code>\n"
-        f"📞 <code>{_html_escape(w.phone)}</code>\n"
-        f"🌏 <code>{_html_escape(w.region)}</code>\n"
-        f"📍 <code>{_html_escape(full_address)}</code>"
+        f"👤 {_html_escape(name)}\n\n"
+        "Нажмите на блок ниже, чтобы скопировать "
+        "телефон, регион и адрес одним текстом:\n"
+        f"<pre>{copy_block}</pre>"
     )
