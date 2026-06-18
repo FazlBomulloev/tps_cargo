@@ -88,10 +88,10 @@ export default function Tariffs() {
             ]} />
           </Form.Item>
           <Form.Item name="price_per_kg" label="Цена за кг (TJS)" rules={[{ required: true }]}>
-            <InputNumber min={0} step={0.5} style={{ width: "100%", borderRadius: 10 }} />
+            <InputNumber min={0} step={0.5} precision={2} decimalSeparator="." style={{ width: "100%", borderRadius: 10 }} />
           </Form.Item>
           <Form.Item name="price_per_m3" label="Цена за м³ (TJS)">
-            <InputNumber min={0} step={10} style={{ width: "100%", borderRadius: 10 }} />
+            <InputNumber min={0} step={10} precision={2} decimalSeparator="." style={{ width: "100%", borderRadius: 10 }} />
           </Form.Item>
         </Form>
       </Modal>

@@ -173,6 +173,8 @@ export default function Issuance() {
               size="small"
               min={0}
               step={0.01}
+              precision={2}
+              decimalSeparator="."
               value={amount}
               onChange={(v) => {
                 if (v != null) setCustomPrices({ ...customPrices, [r.id]: Number(v) });

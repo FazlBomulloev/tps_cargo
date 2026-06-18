@@ -167,10 +167,10 @@ export default function ParcelsDushanbe() {
               <Input placeholder="TPS001" style={{ borderRadius: 12 }} />
             </Form.Item>
             <Form.Item name="weight_kg" label="Вес (кг)" rules={[{ required: true }]}>
-              <InputNumber min={0.001} step={0.1} style={{ width: "100%", borderRadius: 12 }} />
+              <InputNumber min={0.001} step={0.1} precision={3} decimalSeparator="." style={{ width: "100%", borderRadius: 12 }} />
             </Form.Item>
             <Form.Item name="volume_m3" label="Объём м³ (для фуры)">
-              <InputNumber min={0} step={0.01} style={{ width: "100%", borderRadius: 12 }} />
+              <InputNumber min={0} step={0.01} precision={4} decimalSeparator="." style={{ width: "100%", borderRadius: 12 }} />
             </Form.Item>
             <Form.Item name="delivery_method" label="Способ доставки" rules={[{ required: true }]}>
               <Select
@@ -211,10 +211,10 @@ export default function ParcelsDushanbe() {
               <Input placeholder="TPS001" style={{ borderRadius: 12 }} />
             </Form.Item>
             <Form.Item name="weight_kg" label="Вес (общий на партию, кг)" rules={[{ required: true }]}>
-              <InputNumber min={0.001} step={0.1} style={{ width: "100%", borderRadius: 12 }} />
+              <InputNumber min={0.001} step={0.1} precision={3} decimalSeparator="." style={{ width: "100%", borderRadius: 12 }} />
             </Form.Item>
             <Form.Item name="volume_m3" label="Объём м³ (для фуры)">
-              <InputNumber min={0} step={0.01} style={{ width: "100%", borderRadius: 12 }} />
+              <InputNumber min={0} step={0.01} precision={4} decimalSeparator="." style={{ width: "100%", borderRadius: 12 }} />
             </Form.Item>
             <Form.Item name="delivery_method" label="Способ доставки" rules={[{ required: true }]}>
               <Select

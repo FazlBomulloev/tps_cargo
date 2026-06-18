@@ -85,7 +85,9 @@ export default function Expenses() {
         actions={
           <Statistic
             title="Итого по фильтру"
-            value={totalSum.toFixed(2)}
+            value={totalSum}
+            precision={2}
+            groupSeparator=" "
             suffix="TJS"
             valueStyle={{ fontWeight: 700, color: "#FF5630" }}
           />
@@ -106,6 +108,8 @@ export default function Expenses() {
                   min={0.01}
                   max={1000000}
                   step={1}
+                  precision={2}
+                  decimalSeparator="."
                   style={{ width: "100%", borderRadius: 10 }}
                   placeholder="0.00"
                 />
