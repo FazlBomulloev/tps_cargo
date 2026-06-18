@@ -9,7 +9,13 @@ from aiogram.exceptions import (
 )
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import (
+    CallbackQuery,
+    CopyTextButton,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 
 from src.config import CHANNEL_URL, CHANNEL_USERNAME, REDIS_URL
 from src.db import (
@@ -610,11 +616,25 @@ async def on_warehouse_select(
     tps_code = data.get("tps_code", "ВАШ_ID")
     client = await get_client(cb.from_user.id)
     name = client.full_name if client else "Ваше Имя"
+    text, copy_payload = fmt_warehouse_for_client(
+        w, tps_code, name,
+    )
+    # На мобиле копирует тап по <code>-тексту; на десктопе тапа
+    # по тексту нет, поэтому к сообщению крепится Inline-кнопка
+    # с copy_text. Главное меню остаётся видимым — оно живёт в
+    # параллельном слое ReplyKeyboard и не сбрасывается при
+    # отправке сообщения с InlineKeyboardMarkup.
+    copy_kb = InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(
+                text="📋 Скопировать",
+                copy_text=CopyTextButton(text=copy_payload),
+            ),
+        ]],
+    )
     await cb.message.answer(
-        fmt_warehouse_for_client(
-            w, tps_code, name,
-        ),
-        reply_markup=client_main_kb(lang),
+        text,
+        reply_markup=copy_kb,
         parse_mode="HTML",
     )
 

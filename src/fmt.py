@@ -280,25 +280,25 @@ def fmt_my_parcels(
 
 def fmt_warehouse_for_client(
     w, tps_code: str, name: str,
-) -> str:
-    # Обёртка <pre><code class="language-...">…</code></pre> — это
-    # «полноценный» кодовый блок Telegram: и Desktop, и свежие
-    # iOS/Android рисуют его с встроенным виджетом копирования и
-    # одновременно сохраняют поведение <code>-сущности (тап по
-    # моноширинному тексту → «Скопировано»). Просто <code> теряет
-    # копию на десктопе, просто <pre> — на мобильных. Эта связка
-    # покрывает оба сценария.
-    # ВАЖНО: parse_mode="HTML" при отправке (см. on_warehouse_select).
+) -> tuple[str, str]:
+    # Возвращаем (текст_сообщения, plain_для_кнопки_копирования).
+    # Текст: <code> с переносами — на мобилe тап по моноширинному
+    # тексту копирует все три строки сразу. На десктопе <code> по
+    # клику не копируется, поэтому к сообщению прикручиваем
+    # InlineKeyboardButton с copy_text (см. on_warehouse_select).
+    # Plain — без HTML-эскейпа, ровно то, что попадёт в буфер
+    # обмена Telegram через copy_text.
+    # ВАЖНО: parse_mode="HTML" при отправке.
     full_address = f"{w.address}{tps_code}"
+    plain = f"{w.phone}\n{w.region}\n{full_address}"
     copy_block = (
         f"{_html_escape(w.phone)}\n"
         f"{_html_escape(w.region)}\n"
         f"{_html_escape(full_address)}"
     )
-    return (
+    text = (
         f"📍 {_html_escape(w.name)}\n"
         f"👤 {_html_escape(name)}\n\n"
-        f'<pre><code class="language-address">'
-        f"{copy_block}</code></pre>\n"
-        "👆 нажмите чтобы скопировать"
+        f"<code>{copy_block}</code>"
     )
+    return text, plain
