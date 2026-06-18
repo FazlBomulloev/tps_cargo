@@ -81,14 +81,18 @@ async def list_expenses(
     if date_to:
         query = query.where(Expense.created_at <= date_to)
 
+    # Используем один subquery и ссылаемся на его колонки — иначе
+    # SQLAlchemy делает CROSS JOIN с основной таблицей и сумма
+    # умножается на количество строк (баг был раньше: видно 2 строки
+    # на 21 TJS, total_sum показывал ~25 000 TJS).
+    subq = query.subquery()
     total = (await db.execute(
-        select(func.count()).select_from(query.subquery())
+        select(func.count()).select_from(subq)
     )).scalar() or 0
     pages = max(1, math.ceil(total / per_page))
 
     total_sum = (await db.execute(
-        select(func.coalesce(func.sum(Expense.amount), 0))
-        .select_from(query.subquery())
+        select(func.coalesce(func.sum(subq.c.amount), 0))
     )).scalar() or Decimal(0)
 
     result = await db.execute(
