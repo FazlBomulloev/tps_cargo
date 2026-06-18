@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import axios from "axios";
 import { Table, Tag, Card, Input, DatePicker, Space } from "antd";
 import type { Dayjs } from "dayjs";
 import { getIssuances } from "../api/issuance";
@@ -12,9 +13,21 @@ export default function IssuanceHistory() {
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [sortBy, setSortBy] = useState<"id" | "issued_at" | "total_amount" | "total_weight">("issued_at");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const abortRef = useRef<AbortController | null>(null);
+  const loadingTimerRef = useRef<number | null>(null);
 
-  const load = () => {
-    setLoading(true);
+  useEffect(() => {
+    // Отменяем предыдущий запрос — если пользователь быстро кликает по
+    // sorter, старые ответы перезапишут свежее состояние.
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    // Не показываем loading-оверлей мгновенно — он блокирует клики по
+    // заголовкам. Показываем только если запрос дольше 250 ms.
+    if (loadingTimerRef.current) window.clearTimeout(loadingTimerRef.current);
+    loadingTimerRef.current = window.setTimeout(() => setLoading(true), 250);
+
     const params: Record<string, unknown> = {
       page,
       per_page: 20,
@@ -26,13 +39,25 @@ export default function IssuanceHistory() {
       params.date_from = dateRange[0].startOf("day").toISOString();
       params.date_to = dateRange[1].endOf("day").toISOString();
     }
-    getIssuances(params).then((r) => {
-      setData(r.data);
-      setLoading(false);
-    });
-  };
 
-  useEffect(() => { load(); }, [page, search, dateRange, sortBy, sortOrder]);
+    getIssuances({ ...params, signal: controller.signal } as any)
+      .then((r) => {
+        if (controller.signal.aborted) return;
+        setData(r.data);
+      })
+      .catch((err) => {
+        if (axios.isCancel(err)) return;
+      })
+      .finally(() => {
+        if (loadingTimerRef.current) window.clearTimeout(loadingTimerRef.current);
+        if (!controller.signal.aborted) setLoading(false);
+      });
+
+    return () => {
+      controller.abort();
+      if (loadingTimerRef.current) window.clearTimeout(loadingTimerRef.current);
+    };
+  }, [page, search, dateRange, sortBy, sortOrder]);
 
   // Uncontrolled sorter: AntD ведёт визуальное состояние сам. Мы только
   // слушаем onChange и отправляем sort_by/sort_order на бэк. С controlled

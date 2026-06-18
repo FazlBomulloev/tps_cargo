@@ -1,1 +1,0 @@
-import{by as s}from"./index-fYj0Ew8C.js";import{T as n}from"./index-zV6ge4-V.js";const r={in_china:"В Китае",received_dushanbe:"В Душанбе",issued:"Выдано",unresolved:"Неопознанная"},i={in_china:"cyan",received_dushanbe:"processing",issued:"success",unresolved:"warning"};function a({status:e}){return s.jsx(n,{color:i[e],children:r[e]})}export{a as S};
