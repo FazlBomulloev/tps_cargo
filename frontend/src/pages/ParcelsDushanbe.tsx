@@ -167,10 +167,10 @@ export default function ParcelsDushanbe() {
             <Form.Item name="tps_code" label="TPS-код клиента (необязательно)">
               <Input placeholder="TPS001" style={{ borderRadius: 12 }} />
             </Form.Item>
-            <Form.Item name="weight_kg" label="Вес (кг)" rules={[{ required: true }]}>
-              <InputNumber min={0.001} step={0.1} precision={3} decimalSeparator="." style={{ width: "100%", borderRadius: 12 }} />
+            <Form.Item name="weight_kg" label="Вес (кг, необязательно)">
+              <InputNumber min={0} step={0.1} precision={3} decimalSeparator="." style={{ width: "100%", borderRadius: 12 }} />
             </Form.Item>
-            <Form.Item name="volume_m3" label="Объём м³ (для фуры)">
+            <Form.Item name="volume_m3" label="Объём м³ (необязательно)">
               <InputNumber min={0} step={0.01} precision={4} decimalSeparator="." style={{ width: "100%", borderRadius: 12 }} />
             </Form.Item>
             <Form.Item name="delivery_method" label="Способ доставки" rules={[{ required: true }]}>
@@ -211,10 +211,10 @@ export default function ParcelsDushanbe() {
             <Form.Item name="tps_code" label="TPS-код клиента (необязательно)">
               <Input placeholder="TPS001" style={{ borderRadius: 12 }} />
             </Form.Item>
-            <Form.Item name="weight_kg" label="Вес (общий на партию, кг)" rules={[{ required: true }]}>
-              <InputNumber min={0.001} step={0.1} precision={3} decimalSeparator="." style={{ width: "100%", borderRadius: 12 }} />
+            <Form.Item name="weight_kg" label="Вес (общий на партию, кг, необязательно)">
+              <InputNumber min={0} step={0.1} precision={3} decimalSeparator="." style={{ width: "100%", borderRadius: 12 }} />
             </Form.Item>
-            <Form.Item name="volume_m3" label="Объём м³ (для фуры)">
+            <Form.Item name="volume_m3" label="Объём м³ (необязательно)">
               <InputNumber min={0} step={0.01} precision={4} decimalSeparator="." style={{ width: "100%", borderRadius: 12 }} />
             </Form.Item>
             <Form.Item name="delivery_method" label="Способ доставки" rules={[{ required: true }]}>
@@ -291,7 +291,7 @@ export default function ParcelsDushanbe() {
               {
                 title: "Вес",
                 dataIndex: "weight_kg",
-                render: (v: number) => <WeightCell value={v} />,
+                render: (v: number | null) => v != null && v > 0 ? <WeightCell value={v} /> : <span style={{ color: "var(--c-text-muted)" }}>—</span>,
                 width: 100,
               },
               {

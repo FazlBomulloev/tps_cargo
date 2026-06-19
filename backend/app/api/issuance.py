@@ -47,6 +47,8 @@ async def create_issuance(
     items_data = []
 
     custom_map = body.custom_prices or {}
+    weight_map = body.weight_overrides or {}
+    volume_map = body.volume_overrides or {}
 
     # SELECT FOR UPDATE — защита от двойной выдачи при гонке.
     locked_parcels = (await db.execute(
@@ -69,6 +71,27 @@ async def create_issuance(
                 detail=f"Посылка {pid} уже выдана",
             )
 
+        if pid in weight_map:
+            parcel.weight_kg = weight_map[pid]
+        if pid in volume_map:
+            parcel.volume_m3 = volume_map[pid]
+
+        custom = custom_map.get(parcel.id)
+        if custom is None and (parcel.weight_kg is None or parcel.weight_kg <= 0):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Укажите вес для посылки {parcel.id} (или цену вручную)",
+            )
+        if (
+            custom is None
+            and parcel.delivery_method == "truck"
+            and (parcel.volume_m3 is None or parcel.volume_m3 <= 0)
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Укажите объём для посылки {parcel.id} (фура)",
+            )
+
         tariff = (await db.execute(
             select(Tariff)
             .where(
@@ -87,7 +110,6 @@ async def create_issuance(
                 ),
             )
 
-        custom = custom_map.get(parcel.id)
         if custom is not None:
             try:
                 amount = Decimal(custom)
@@ -123,7 +145,7 @@ async def create_issuance(
             "currency": tariff.currency,
         }
 
-        total_weight += parcel.weight_kg
+        total_weight += parcel.weight_kg or Decimal(0)
         total_amount += amount
         items_data.append({
             "parcel": parcel,

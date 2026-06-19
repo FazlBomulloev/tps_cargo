@@ -22,6 +22,10 @@ export default function Issuance() {
   const [comment, setComment] = useState("");
   const [customPrices, setCustomPrices] = useState<Record<number, number>>({});
   const [editingPrice, setEditingPrice] = useState<number | null>(null);
+  const [weightOverrides, setWeightOverrides] = useState<Record<number, number>>({});
+  const [volumeOverrides, setVolumeOverrides] = useState<Record<number, number>>({});
+  const [editingWeight, setEditingWeight] = useState<number | null>(null);
+  const [editingVolume, setEditingVolume] = useState<number | null>(null);
   const [loadingSearch, setLoadingSearch] = useState(false);
   const [searched, setSearched] = useState(false);
 
@@ -60,6 +64,10 @@ export default function Issuance() {
     setSelected([]);
     setCustomPrices({});
     setEditingPrice(null);
+    setWeightOverrides({});
+    setVolumeOverrides({});
+    setEditingWeight(null);
+    setEditingVolume(null);
     setComment("");
   };
 
@@ -101,22 +109,32 @@ export default function Issuance() {
     [tariffs],
   );
 
+  const effectiveWeight = useCallback(
+    (p: any) => (p.id in weightOverrides ? weightOverrides[p.id] : Number(p.weight_kg) || 0),
+    [weightOverrides],
+  );
+  const effectiveVolume = useCallback(
+    (p: any) => (p.id in volumeOverrides ? volumeOverrides[p.id] : Number(p.volume_m3) || 0),
+    [volumeOverrides],
+  );
+
   const calcAmount = useCallback((p: any) => {
     const t = tariffByMethod[p.delivery_method];
     if (!t) return 0;
-    if (p.delivery_method === "avia") return +(p.weight_kg * t.price_per_kg).toFixed(2);
-    const byKg = p.weight_kg * t.price_per_kg;
-    const byM3 = (p.volume_m3 || 0) * (t.price_per_m3 || 0);
+    const w = effectiveWeight(p);
+    if (p.delivery_method === "avia") return +(w * t.price_per_kg).toFixed(2);
+    const byKg = w * t.price_per_kg;
+    const byM3 = effectiveVolume(p) * (t.price_per_m3 || 0);
     return +Math.max(byKg, byM3).toFixed(2);
-  }, [tariffByMethod]);
+  }, [tariffByMethod, effectiveWeight, effectiveVolume]);
 
   const selectedParcels = useMemo(
     () => parcels.filter((p) => selected.includes(p.id)),
     [parcels, selected],
   );
   const totalWeight = useMemo(
-    () => selectedParcels.reduce((s, p) => s + +p.weight_kg, 0),
-    [selectedParcels],
+    () => selectedParcels.reduce((s, p) => s + effectiveWeight(p), 0),
+    [selectedParcels, effectiveWeight],
   );
   const totalAmount = useMemo(
     () => selectedParcels.reduce((s, p) => {
@@ -125,6 +143,18 @@ export default function Issuance() {
     }, 0),
     [selectedParcels, customPrices, calcAmount],
   );
+
+  const missingFields = useMemo(() => {
+    const issues: string[] = [];
+    for (const p of selectedParcels) {
+      if (p.id in customPrices) continue;
+      if (effectiveWeight(p) <= 0) issues.push(`${p.track_id}: вес`);
+      if (p.delivery_method === "truck" && effectiveVolume(p) <= 0) {
+        issues.push(`${p.track_id}: объём`);
+      }
+    }
+    return issues;
+  }, [selectedParcels, customPrices, effectiveWeight, effectiveVolume]);
 
   const requiredMethods = Array.from(
     new Set(selectedParcels.map((p) => p.delivery_method).filter(Boolean)),
@@ -143,14 +173,100 @@ export default function Issuance() {
       render: (v: string) => <TrackChip value={v} copyable={false} />,
     },
     {
-      title: "Вес",
-      dataIndex: "weight_kg",
-      render: (v: number) => <WeightCell value={v} />,
+      title: (
+        <Tooltip title="Кликни, чтобы изменить вес перед выдачей">
+          <span>Вес <EditOutlined style={{ fontSize: 11, opacity: 0.6, marginLeft: 4 }} /></span>
+        </Tooltip>
+      ),
+      render: (_: any, r: any) => {
+        const isOverride = r.id in weightOverrides;
+        const w = effectiveWeight(r);
+        if (editingWeight === r.id) {
+          return (
+            <InputNumber
+              autoFocus
+              size="small"
+              min={0}
+              step={0.1}
+              precision={3}
+              decimalSeparator="."
+              value={w}
+              onChange={(v) => {
+                if (v != null) setWeightOverrides({ ...weightOverrides, [r.id]: Number(v) });
+              }}
+              onBlur={() => setEditingWeight(null)}
+              onPressEnter={() => setEditingWeight(null)}
+              style={{ width: 100 }}
+              addonAfter="кг"
+            />
+          );
+        }
+        const missing = w <= 0;
+        return (
+          <span
+            onClick={() => setEditingWeight(r.id)}
+            style={{
+              cursor: "pointer",
+              padding: "2px 8px",
+              borderRadius: 4,
+              background: missing ? "var(--c-error-soft)" : (isOverride ? "var(--c-warning-soft)" : "transparent"),
+              color: missing ? "var(--c-error)" : (isOverride ? "var(--c-warning)" : "var(--c-text)"),
+              borderBottom: missing || isOverride ? "none" : "1px dashed var(--c-text-muted)",
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            {missing ? "—" : <WeightCell value={w} />} <EditOutlined style={{ fontSize: 10, opacity: 0.5 }} />
+          </span>
+        );
+      },
     },
     {
-      title: "Объём",
-      dataIndex: "volume_m3",
-      render: (v: number) => v ? `${v} м³` : "—",
+      title: (
+        <Tooltip title="Кликни, чтобы изменить объём">
+          <span>Объём <EditOutlined style={{ fontSize: 11, opacity: 0.6, marginLeft: 4 }} /></span>
+        </Tooltip>
+      ),
+      render: (_: any, r: any) => {
+        const isOverride = r.id in volumeOverrides;
+        const v = effectiveVolume(r);
+        if (editingVolume === r.id) {
+          return (
+            <InputNumber
+              autoFocus
+              size="small"
+              min={0}
+              step={0.01}
+              precision={4}
+              decimalSeparator="."
+              value={v}
+              onChange={(val) => {
+                if (val != null) setVolumeOverrides({ ...volumeOverrides, [r.id]: Number(val) });
+              }}
+              onBlur={() => setEditingVolume(null)}
+              onPressEnter={() => setEditingVolume(null)}
+              style={{ width: 100 }}
+              addonAfter="м³"
+            />
+          );
+        }
+        const truckMissing = r.delivery_method === "truck" && v <= 0;
+        return (
+          <span
+            onClick={() => setEditingVolume(r.id)}
+            style={{
+              cursor: "pointer",
+              padding: "2px 8px",
+              borderRadius: 4,
+              background: truckMissing ? "var(--c-error-soft)" : (isOverride ? "var(--c-warning-soft)" : "transparent"),
+              color: truckMissing ? "var(--c-error)" : (isOverride ? "var(--c-warning)" : "var(--c-text)"),
+              borderBottom: truckMissing || isOverride ? "none" : "1px dashed var(--c-text-muted)",
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            {v > 0 ? `${v} м³` : "—"} <EditOutlined style={{ fontSize: 10, opacity: 0.5 }} />
+          </span>
+        );
+      },
     },
     {
       title: "Метод",
@@ -220,7 +336,7 @@ export default function Issuance() {
         );
       },
     },
-  ], [customPrices, editingPrice, calcAmount, handleResetPrice]);
+  ], [customPrices, editingPrice, calcAmount, handleResetPrice, weightOverrides, volumeOverrides, editingWeight, editingVolume, effectiveWeight, effectiveVolume]);
 
   const handleIssue = async () => {
     if (issueBlocked) {
@@ -228,11 +344,21 @@ export default function Issuance() {
       return;
     }
     if (!selected.length) { message.warning("Выберите посылки"); return; }
+    if (missingFields.length) {
+      message.error(`Заполни вес/объём: ${missingFields.join("; ")}`);
+      return;
+    }
     setLoading(true);
     try {
       const cp: Record<number, number> = {};
       for (const id of selected) {
         if (id in customPrices) cp[id] = customPrices[id];
+      }
+      const wo: Record<number, number> = {};
+      const vo: Record<number, number> = {};
+      for (const id of selected) {
+        if (id in weightOverrides) wo[id] = weightOverrides[id];
+        if (id in volumeOverrides) vo[id] = volumeOverrides[id];
       }
       await createIssuance({
         client_id: client.id,
@@ -241,11 +367,14 @@ export default function Issuance() {
         payment_status: paymentStatus,
         comment: comment.trim() || undefined,
         custom_prices: Object.keys(cp).length ? cp : undefined,
+        weight_overrides: Object.keys(wo).length ? wo : undefined,
+        volume_overrides: Object.keys(vo).length ? vo : undefined,
       });
       message.success(`Выдача оформлена · Итого: ${totalWeight.toFixed(1)} кг, ${totalAmount.toFixed(2)} TJS`);
       setClient(null); setParcels([]); setSelected([]);
       setQuery(""); setCandidates([]); setSearched(false);
       setComment(""); setCustomPrices({});
+      setWeightOverrides({}); setVolumeOverrides({});
     } catch (e: any) {
       message.error(e.response?.data?.detail || "Ошибка");
     } finally {

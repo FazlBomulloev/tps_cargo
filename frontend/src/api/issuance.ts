@@ -8,6 +8,8 @@ export interface CreateIssuanceData {
   payment_status: string;
   comment?: string;
   custom_prices?: Record<number, number>;
+  weight_overrides?: Record<number, number>;
+  volume_overrides?: Record<number, number>;
 }
 
 export interface GetIssuancesParams {

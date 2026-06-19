@@ -96,7 +96,7 @@ export default function ParcelDetail() {
               <MethodTag method={parcel.delivery_method} />
             </Descriptions.Item>
             <Descriptions.Item label="Вес">
-              <WeightCell value={parcel.weight_kg} />
+              {parcel.weight_kg != null && Number(parcel.weight_kg) > 0 ? <WeightCell value={parcel.weight_kg} /> : "—"}
             </Descriptions.Item>
             <Descriptions.Item label="Объём">{parcel.volume_m3 ? `${parcel.volume_m3} м³` : "—"}</Descriptions.Item>
             <Descriptions.Item label="Сумма">

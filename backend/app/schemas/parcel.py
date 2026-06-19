@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel
 
 
 class ParcelChinaCreate(BaseModel):
@@ -25,45 +25,21 @@ class ParcelChinaResponse(BaseModel):
 class ParcelDushanbeCreate(BaseModel):
     track_id: str
     tps_code: str | None = None
-    weight_kg: Decimal
+    weight_kg: Decimal | None = None
     volume_m3: Decimal | None = None
     delivery_method: str
     comment: str | None = None
     shelf: str | None = None
-
-    @model_validator(mode="after")
-    def _validate_truck_volume(self):
-        # truck без volume_m3 → недосчёт денег в max(byKg, byM3).
-        if self.delivery_method == "truck" and (
-            self.volume_m3 is None or self.volume_m3 <= 0
-        ):
-            raise ValueError(
-                "volume_m3 обязателен и должен быть > 0 для delivery_method='truck'"
-            )
-        return self
 
 
 class ParcelDushanbeBulk(BaseModel):
-    """Групповая приёмка в Душанбе: один клиент (TPS) и общие
-    вес/метод доставки на всю партию треков."""
-
     tps_code: str | None = None
     track_ids: list[str]
-    weight_kg: Decimal
+    weight_kg: Decimal | None = None
     delivery_method: str
     volume_m3: Decimal | None = None
     comment: str | None = None
     shelf: str | None = None
-
-    @model_validator(mode="after")
-    def _validate_truck_volume(self):
-        if self.delivery_method == "truck" and (
-            self.volume_m3 is None or self.volume_m3 <= 0
-        ):
-            raise ValueError(
-                "volume_m3 обязателен и должен быть > 0 для delivery_method='truck'"
-            )
-        return self
 
 
 class ParcelDushanbeResponse(BaseModel):
@@ -71,7 +47,7 @@ class ParcelDushanbeResponse(BaseModel):
     track_id: str
     client_id: int
     status: str
-    weight_kg: Decimal
+    weight_kg: Decimal | None = None
     volume_m3: Decimal | None = None
     delivery_method: str
     warehouse_id: int | None = None

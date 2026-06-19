@@ -83,7 +83,7 @@ export default function ClientDetail() {
                 dataIndex: "status",
                 render: (v: ParcelStatus) => <StatusTag status={v} />,
               },
-              { title: "Вес", dataIndex: "weight_kg", render: (v: number) => <WeightCell value={v} /> },
+              { title: "Вес", dataIndex: "weight_kg", render: (v: number | null) => v != null && v > 0 ? <WeightCell value={v} /> : <span style={{ color: "#919EAB" }}>—</span> },
               {
                 title: "Метод",
                 dataIndex: "delivery_method",

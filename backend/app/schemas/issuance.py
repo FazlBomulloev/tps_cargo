@@ -13,6 +13,8 @@ class IssuanceCreate(BaseModel):
     payment_status: str
     comment: str | None = None
     custom_prices: dict[int, Decimal] | None = None
+    weight_overrides: dict[int, Decimal] | None = None
+    volume_overrides: dict[int, Decimal] | None = None
 
     @field_validator("custom_prices")
     @classmethod
@@ -27,6 +29,18 @@ class IssuanceCreate(BaseModel):
             if amount >= MAX_CUSTOM_PRICE:
                 raise ValueError(
                     f"custom_prices[{parcel_id}] превышает допустимый максимум"
+                )
+        return value
+
+    @field_validator("weight_overrides", "volume_overrides")
+    @classmethod
+    def _validate_positive_overrides(cls, value):
+        if value is None:
+            return value
+        for parcel_id, v in value.items():
+            if v <= 0:
+                raise ValueError(
+                    f"override для посылки {parcel_id} должен быть > 0"
                 )
         return value
 

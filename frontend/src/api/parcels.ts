@@ -35,8 +35,8 @@ export interface GetParcelsParams {
 export interface AddDushanbeParcelData {
   track_id: string;
   tps_code?: string;
-  weight_kg: number;
-  volume_m3?: number;
+  weight_kg?: number | null;
+  volume_m3?: number | null;
   delivery_method: DeliveryMethod;
   comment?: string;
   shelf?: string;
@@ -45,9 +45,9 @@ export interface AddDushanbeParcelData {
 export interface AddDushanbeBulkData {
   tps_code?: string;
   track_ids: string[];
-  weight_kg: number;
+  weight_kg?: number | null;
   delivery_method: DeliveryMethod;
-  volume_m3?: number;
+  volume_m3?: number | null;
   comment?: string;
   shelf?: string;
 }

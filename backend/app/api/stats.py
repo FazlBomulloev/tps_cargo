@@ -118,12 +118,19 @@ async def overview(
     dushanbe_added += unresolved_count
     added_count = china_added + dushanbe_added
 
-    total_weight = (await db.execute(
-        select(func.sum(ParcelDushanbe.weight_kg)).where(
+    dushanbe_weight = (await db.execute(
+        select(func.coalesce(func.sum(ParcelDushanbe.weight_kg), 0)).where(
             ParcelDushanbe.is_deleted == False,
             *_time_filter(ParcelDushanbe.created_at, start, end),
         )
     )).scalar() or 0
+    unresolved_weight = (await db.execute(
+        select(func.coalesce(func.sum(UnresolvedParcel.weight_kg), 0)).where(
+            UnresolvedParcel.resolved.is_(False),
+            *_time_filter(UnresolvedParcel.created_at, start, end),
+        )
+    )).scalar() or 0
+    total_weight = Decimal(str(dushanbe_weight)) + Decimal(str(unresolved_weight))
 
     gross_revenue = (await db.execute(
         select(func.sum(IssuanceOrder.total_amount)).where(*_time_filter(IssuanceOrder.issued_at, start, end))
@@ -204,7 +211,21 @@ async def overview(
         )
         .group_by(ParcelDushanbe.delivery_method)
     )).all()
-    weight_by_method = {m: float(s) for m, s in weight_rows}
+    weight_by_method: dict[str, float] = {m: float(s) for m, s in weight_rows}
+    unresolved_weight_rows = (await db.execute(
+        select(
+            UnresolvedParcel.delivery_method,
+            func.coalesce(func.sum(UnresolvedParcel.weight_kg), 0),
+        )
+        .where(
+            UnresolvedParcel.resolved.is_(False),
+            UnresolvedParcel.delivery_method.isnot(None),
+            *_time_filter(UnresolvedParcel.created_at, start, end),
+        )
+        .group_by(UnresolvedParcel.delivery_method)
+    )).all()
+    for m, s in unresolved_weight_rows:
+        weight_by_method[m] = weight_by_method.get(m, 0.0) + float(s)
 
     return {
         "china_count": china_count,

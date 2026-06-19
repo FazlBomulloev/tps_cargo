@@ -27,7 +27,7 @@ class ParcelDushanbe(Base):
     status: Mapped[str] = mapped_column(
         String(30), nullable=False, default="received_dushanbe", server_default="received_dushanbe"
     )
-    weight_kg: Mapped[Decimal] = mapped_column(Numeric(10, 3), nullable=False)
+    weight_kg: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
     volume_m3: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
     delivery_method: Mapped[str] = mapped_column(String(20), nullable=False)
     warehouse_id: Mapped[int | None] = mapped_column(
