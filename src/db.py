@@ -455,7 +455,7 @@ async def mark_notified(parcel_id: int):
         )
         parcel = result.scalar_one_or_none()
         if parcel:
-            parcel.notified_at = datetime.now(timezone.utc)
+            parcel.notified_at = datetime.now(timezone.utc).replace(tzinfo=None)
             await s.commit()
 
 
