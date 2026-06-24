@@ -69,7 +69,8 @@ async def resolve_parcel(
         track_id=unresolved.track_id, client_id=client.id,
         weight_kg=unresolved.weight_kg or 0, volume_m3=unresolved.volume_m3,
         delivery_method=unresolved.delivery_method or "avia",
-        comment=unresolved.comment, has_china_registration=china is not None,
+        comment=unresolved.comment, shelf=unresolved.shelf,
+        has_china_registration=china is not None,
         created_by=current_user.id,
     )
     db.add(parcel)

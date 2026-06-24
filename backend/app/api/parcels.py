@@ -170,6 +170,7 @@ async def add_dushanbe(
             volume_m3=body.volume_m3,
             delivery_method=body.delivery_method,
             comment=body.comment,
+            shelf=(body.shelf or "").strip() or None,
             created_by=current_user.id,
         )
         db.add(unresolved)
@@ -192,6 +193,7 @@ async def add_dushanbe(
             volume_m3=body.volume_m3,
             delivery_method=body.delivery_method,
             comment=body.comment,
+            shelf=(body.shelf or "").strip() or None,
             created_by=current_user.id,
         )
         db.add(unresolved)
@@ -306,6 +308,7 @@ async def add_dushanbe_bulk(
                 volume_m3=body.volume_m3,
                 delivery_method=body.delivery_method,
                 comment=body.comment,
+                shelf=(body.shelf or "").strip() or None,
                 created_by=current_user.id,
             ))
             unresolved_list.append(track)

@@ -26,6 +26,7 @@ class UnresolvedParcel(Base):
     volume_m3: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
     delivery_method: Mapped[str | None] = mapped_column(String(20), nullable=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    shelf: Mapped[str | None] = mapped_column(String(20), nullable=True)
     resolved: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     resolved_parcel_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("parcels_dushanbe.id"), nullable=True

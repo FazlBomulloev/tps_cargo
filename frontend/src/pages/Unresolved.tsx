@@ -95,6 +95,24 @@ export default function Unresolved() {
                 dataIndex: "delivery_method",
                 render: (v: DeliveryMethod | null) => (v ? <MethodTag method={v} /> : "—"),
               },
+              {
+                title: "Полка",
+                dataIndex: "shelf",
+                width: 80,
+                render: (v: string | null) =>
+                  v ? (
+                    <Tag color="default" style={{ borderRadius: 8, fontWeight: 600 }}>{v}</Tag>
+                  ) : (
+                    <span style={{ color: "var(--c-text-muted)" }}>—</span>
+                  ),
+              },
+              {
+                title: "Комментарий",
+                dataIndex: "comment",
+                ellipsis: { showTitle: true },
+                render: (v: string | null) =>
+                  v ? <span>{v}</span> : <span style={{ color: "var(--c-text-muted)" }}>—</span>,
+              },
               { title: "Дата", dataIndex: "created_at", render: (v: string) => v?.slice(0, 10) },
               {
                 title: "Действия",
