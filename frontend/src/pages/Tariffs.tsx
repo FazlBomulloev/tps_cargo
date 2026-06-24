@@ -4,6 +4,7 @@ import { PlusOutlined } from "@ant-design/icons";
 import { getActiveTariffs, createTariff } from "../api/tariffs";
 import type { DeliveryMethod } from "../types/api";
 import { PageHeader, MethodTag, MoneyCell } from "../components/ui";
+import { formatDateRu } from "../utils/format";
 
 export default function Tariffs() {
   const [items, setItems] = useState<any[]>([]);
@@ -65,7 +66,7 @@ export default function Tariffs() {
               {
                 title: "Дата",
                 dataIndex: "created_at",
-                render: (v: string) => v ? new Date(v).toLocaleDateString("ru-RU") : "—",
+                render: (v: string) => formatDateRu(v),
               },
             ]}
           />

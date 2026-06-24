@@ -118,6 +118,9 @@ class ParcelDushanbe(Base):
     warehouse_id: Mapped[int | None] = mapped_column(
         Integer, nullable=True,
     )
+    intake_group_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True,
+    )
     amount_due: Mapped[Decimal | None] = mapped_column(
         Numeric(10, 2), nullable=True,
     )

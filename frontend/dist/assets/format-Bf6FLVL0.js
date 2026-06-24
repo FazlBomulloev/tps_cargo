@@ -1,0 +1,1 @@
+import{aL as a}from"./index-t6gDVFbA.js";const n="Asia/Dushanbe";function r(t){return a.utc(t).tz(n)}function u(t){return t?r(t).format("DD.MM.YYYY HH:mm"):"—"}function f(t){return t?r(t).format("DD.MM.YYYY"):"—"}export{u as a,f};

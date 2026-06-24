@@ -141,12 +141,6 @@ def fmt_track_result_client(
                 f"{get_text('parcel_field_weight', lang)}: "
                 f"{_fmt_kg(info['weight_kg'])} кг"
             )
-        if info.get("amount_estimated"):
-            lines.append(
-                "│   "
-                f"{get_text('parcel_field_amount_est', lang)}"
-                f": {_fmt_amount(info['amount_estimated'])}"
-            )
     elif in_china:
         lines.append(
             "│ " + get_text("track_in_china", lang)
@@ -178,54 +172,83 @@ PARCELS_PER_PAGE = 15  # средняя длина 1 посылки ~200 бай�
 
 def _fmt_one_parcel(p: dict, lang: str) -> str:
     lines = ["│", f"│ 📦  {p['track_id']}"]
-    # 2) Принято в Китае — только если зарегистрировано.
     if p.get("china_at"):
         lines.append(
             f"│   {get_text('parcel_field_china', lang)}: "
             f"{_format_date(p['china_at'])}"
         )
-    # 3) Статус.
     lines.append(
         f"│   {get_text('parcel_field_status', lang)}: "
         f"{_status_text(p['status'], lang)}"
     )
-    # 4) Прибыло в Душанбе.
     if p.get("arrived_at"):
         lines.append(
             f"│   "
             f"{get_text('parcel_field_arrived', lang)}: "
             f"{_format_date(p['arrived_at'])}"
         )
-    # Полка на складе в Душанбе.
     if p.get("shelf"):
         lines.append(
             f"│   {get_text('parcel_field_shelf', lang)}: "
             f"{p['shelf']}"
         )
-    # 5) Вес.
     if p.get("weight_kg"):
         lines.append(
             f"│   {get_text('parcel_field_weight', lang)}: "
             f"{_fmt_kg(p['weight_kg'])} кг"
         )
-    # 6) Сумма к оплате: зафиксированная либо ориентировочная.
-    if p.get("amount_due"):
-        lines.append(
-            f"│   {get_text('parcel_field_amount', lang)}: "
-            f"{_fmt_amount(p['amount_due'])}"
-        )
-    elif p.get("amount_estimated"):
-        lines.append(
-            "│   "
-            f"{get_text('parcel_field_amount_est', lang)}: "
-            f"{_fmt_amount(p['amount_estimated'])}"
-        )
-    # 7) Дата выдачи — для выданных.
     if p["status"] == "issued" and p.get("issued_at"):
         lines.append(
             f"│   {get_text('parcel_field_issued', lang)}: "
             f"{_format_date(p['issued_at'])}"
         )
+    return "\n".join(lines)
+
+
+def _fmt_group(group_no: int, parcels: list, lang: str) -> str:
+    """Партия (intake_group) — один блок со списком трек-кодов
+    и общим весом. Цена клиенту не показывается."""
+    first = parcels[0]
+    total_weight = sum(
+        (p.get("weight_kg") or 0) for p in parcels
+    )
+    lines = [
+        "│",
+        f"│ 📦📦  Партия №{group_no} · {len(parcels)} шт.",
+    ]
+    if first.get("china_at"):
+        lines.append(
+            f"│   {get_text('parcel_field_china', lang)}: "
+            f"{_format_date(first['china_at'])}"
+        )
+    lines.append(
+        f"│   {get_text('parcel_field_status', lang)}: "
+        f"{_status_text(first['status'], lang)}"
+    )
+    if first.get("arrived_at"):
+        lines.append(
+            f"│   "
+            f"{get_text('parcel_field_arrived', lang)}: "
+            f"{_format_date(first['arrived_at'])}"
+        )
+    if first.get("shelf"):
+        lines.append(
+            f"│   {get_text('parcel_field_shelf', lang)}: "
+            f"{first['shelf']}"
+        )
+    if total_weight:
+        lines.append(
+            f"│   {get_text('parcel_field_weight', lang)}: "
+            f"{_fmt_kg(total_weight)} кг (общий)"
+        )
+    if first["status"] == "issued" and first.get("issued_at"):
+        lines.append(
+            f"│   {get_text('parcel_field_issued', lang)}: "
+            f"{_format_date(first['issued_at'])}"
+        )
+    lines.append("│   Трек-коды:")
+    for p in parcels:
+        lines.append(f"│     • {p['track_id']}")
     return "\n".join(lines)
 
 
@@ -248,20 +271,43 @@ def fmt_my_parcels_pages(
         lines.append("└─────────────────────────┘")
         return ["\n".join(lines)]
 
+    # Группируем посылки одной партии (intake_group_id) в один блок.
+    # Порядок сохраняем — первое появление gid фиксирует позицию группы.
+    blocks: list[tuple[str, list[dict]]] = []
+    group_pos: dict[int, int] = {}
+    group_no_map: dict[int, int] = {}
+    next_no = 0
+    for p in parcels:
+        gid = p.get("intake_group_id")
+        if gid is None:
+            blocks.append(("single", [p]))
+            continue
+        if gid not in group_pos:
+            next_no += 1
+            group_no_map[gid] = next_no
+            group_pos[gid] = len(blocks)
+            blocks.append(("group", [p]))
+        else:
+            blocks[group_pos[gid]][1].append(p)
+
     total_pages = (
-        len(parcels) + PARCELS_PER_PAGE - 1
+        len(blocks) + PARCELS_PER_PAGE - 1
     ) // PARCELS_PER_PAGE
     pages = []
-    for i in range(0, len(parcels), PARCELS_PER_PAGE):
-        chunk = parcels[i:i + PARCELS_PER_PAGE]
+    for i in range(0, len(blocks), PARCELS_PER_PAGE):
+        chunk = blocks[i:i + PARCELS_PER_PAGE]
         lines = list(header_top)
         if total_pages > 1:
             page_num = i // PARCELS_PER_PAGE + 1
             lines.append(
                 f"│   {get_text('my_parcels_page', lang).format(page=page_num, total_pages=total_pages)}"
             )
-        for p in chunk:
-            lines.append(_fmt_one_parcel(p, lang))
+        for kind, items in chunk:
+            if kind == "single":
+                lines.append(_fmt_one_parcel(items[0], lang))
+            else:
+                gid = items[0]["intake_group_id"]
+                lines.append(_fmt_group(group_no_map[gid], items, lang))
         lines.append("└─────────────────────────┘")
         pages.append("\n".join(lines))
     return pages

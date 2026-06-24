@@ -51,6 +51,7 @@ class ParcelDushanbeResponse(BaseModel):
     volume_m3: Decimal | None = None
     delivery_method: str
     warehouse_id: int | None = None
+    intake_group_id: int | None = None
     amount_due: Decimal | None = None
     tariff_snapshot: Decimal | None = None
     has_china_registration: bool

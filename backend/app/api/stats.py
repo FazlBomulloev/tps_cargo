@@ -1,6 +1,14 @@
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+
+# БД хранит naive UTC, но «сегодня/7д/30д» пользователь воспринимает в TZ
+# Душанбе (UTC+5). Считаем границы в местном времени и переводим в UTC.
+TZ_DUSHANBE = timezone(timedelta(hours=5))
+
+
+def _to_utc_naive(dt: datetime) -> datetime:
+    return dt.astimezone(timezone.utc).replace(tzinfo=None)
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import Date, String, cast, exists, func, select
@@ -21,17 +29,21 @@ router = APIRouter(prefix="/api/stats", tags=["stats"])
 
 
 def _resolve_range(period: str, from_date: str | None, to_date: str | None):
-    now = datetime.utcnow()
+    now_local = datetime.now(TZ_DUSHANBE)
     if period == "custom" and from_date:
-        start = datetime.fromisoformat(from_date)
-        end = datetime.fromisoformat(to_date) if to_date else now
-        return start, end
+        start_local = datetime.fromisoformat(from_date).replace(tzinfo=TZ_DUSHANBE)
+        end_local = (
+            datetime.fromisoformat(to_date).replace(tzinfo=TZ_DUSHANBE)
+            if to_date else now_local
+        )
+        return _to_utc_naive(start_local), _to_utc_naive(end_local)
     if period == "all":
         return None, None
     if period == "today":
-        return now.replace(hour=0, minute=0, second=0, microsecond=0), None
+        start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        return _to_utc_naive(start_local), None
     days = {"7d": 7, "30d": 30, "90d": 90}.get(period, 30)
-    return now - timedelta(days=days), None
+    return _to_utc_naive(now_local - timedelta(days=days)), None
 
 
 def _time_filter(col, start, end):
@@ -82,6 +94,7 @@ async def overview(
     unresolved_count_total = (await db.execute(
         select(func.count(UnresolvedParcel.id)).where(
             UnresolvedParcel.resolved.is_(False),
+            UnresolvedParcel.is_deleted.is_(False),
         )
     )).scalar() or 0
 
@@ -91,6 +104,7 @@ async def overview(
     unresolved_count = (await db.execute(
         select(func.count(UnresolvedParcel.id)).where(
             UnresolvedParcel.resolved.is_(False),
+            UnresolvedParcel.is_deleted.is_(False),
             *_time_filter(UnresolvedParcel.created_at, start, end),
         )
     )).scalar() or 0
@@ -127,6 +141,7 @@ async def overview(
     unresolved_weight = (await db.execute(
         select(func.coalesce(func.sum(UnresolvedParcel.weight_kg), 0)).where(
             UnresolvedParcel.resolved.is_(False),
+            UnresolvedParcel.is_deleted.is_(False),
             *_time_filter(UnresolvedParcel.created_at, start, end),
         )
     )).scalar() or 0
@@ -219,6 +234,7 @@ async def overview(
         )
         .where(
             UnresolvedParcel.resolved.is_(False),
+            UnresolvedParcel.is_deleted.is_(False),
             UnresolvedParcel.delivery_method.isnot(None),
             *_time_filter(UnresolvedParcel.created_at, start, end),
         )

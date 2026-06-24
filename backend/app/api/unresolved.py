@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -21,17 +21,26 @@ class ResolveRequest(BaseModel):
 
 @router.get("")
 async def list_unresolved(
+    search: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: StaffUser = Depends(require_role("admin_dushanbe", "owner")),
 ):
-    result = await db.execute(
-        select(UnresolvedParcel)
-        .where(
-            UnresolvedParcel.resolved == False,
-            UnresolvedParcel.is_deleted == False,
-        )
-        .order_by(UnresolvedParcel.created_at.desc())
+    query = select(UnresolvedParcel).where(
+        UnresolvedParcel.resolved == False,
+        UnresolvedParcel.is_deleted == False,
     )
+    if search:
+        s = search.strip()
+        if s:
+            pattern = f"%{s}%"
+            query = query.where(
+                or_(
+                    UnresolvedParcel.track_id.ilike(pattern),
+                    UnresolvedParcel.raw_tps_code.ilike(pattern),
+                    UnresolvedParcel.comment.ilike(pattern),
+                )
+            )
+    result = await db.execute(query.order_by(UnresolvedParcel.created_at.desc()))
     return result.scalars().all()
 
 

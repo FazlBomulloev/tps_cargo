@@ -9,9 +9,11 @@ export default function Unresolved() {
   const [items, setItems] = useState<any[]>([]);
   const [resolveId, setResolveId] = useState<number | null>(null);
   const [tpsCode, setTpsCode] = useState("");
+  const [search, setSearch] = useState("");
 
-  const load = () => getUnresolved().then((r) => setItems(r.data));
-  useEffect(() => { load(); }, []);
+  const load = (s: string = search) =>
+    getUnresolved(s.trim() || undefined).then((r) => setItems(r.data));
+  useEffect(() => { load(""); }, []);
 
   const handleResolve = async () => {
     if (!tpsCode.trim()) return;
@@ -52,7 +54,20 @@ export default function Unresolved() {
       />
 
       <div className="animate-fade-in-up">
-        <Card styles={{ body: { padding: 0 } }} className="hover-card">
+        <Card
+          styles={{ body: { padding: 0 } }}
+          className="hover-card"
+          title={
+            <Input.Search
+              placeholder="Поиск: трек-код, TPS или комментарий"
+              allowClear
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onSearch={(v) => { setSearch(v); load(v); }}
+              style={{ maxWidth: 400 }}
+            />
+          }
+        >
           <Table
             dataSource={items}
             rowKey="id"

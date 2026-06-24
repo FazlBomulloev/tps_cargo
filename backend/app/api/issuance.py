@@ -56,9 +56,29 @@ async def create_issuance(
         .where(ParcelDushanbe.id.in_(body.parcel_ids))
         .with_for_update()
     )).scalars().all()
+
+    # Партия (intake_group) выдаётся целиком: добиваем недостающих
+    # соратников по группе, чтобы вес/объём учлись полностью.
+    group_ids = {p.intake_group_id for p in locked_parcels if p.intake_group_id}
+    parcel_ids_full = list(body.parcel_ids)
+    if group_ids:
+        siblings = (await db.execute(
+            select(ParcelDushanbe)
+            .where(
+                ParcelDushanbe.intake_group_id.in_(group_ids),
+                ParcelDushanbe.is_deleted == False,
+                ParcelDushanbe.status == "received_dushanbe",
+                ~ParcelDushanbe.id.in_(body.parcel_ids),
+            )
+            .with_for_update()
+        )).scalars().all()
+        for s in siblings:
+            locked_parcels.append(s)
+            parcel_ids_full.append(s.id)
+
     parcels_by_id = {p.id: p for p in locked_parcels}
 
-    for pid in body.parcel_ids:
+    for pid in parcel_ids_full:
         parcel = parcels_by_id.get(pid)
         if not parcel or parcel.is_deleted:
             raise HTTPException(
@@ -191,7 +211,8 @@ async def create_issuance(
         entity_id=order.id,
         after={
             "client_id": body.client_id,
-            "parcel_count": len(body.parcel_ids),
+            "parcel_count": len(parcel_ids_full),
+            "auto_added_from_groups": len(parcel_ids_full) - len(body.parcel_ids),
             "total_amount": str(total_amount),
             "has_custom_prices": bool(
                 body.custom_prices

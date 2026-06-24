@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
-import { Alert, Card, Input, Button, Table, Radio, message, Typography, Space, Statistic, List, InputNumber, Steps, Skeleton, Tooltip } from "antd";
-import { SearchOutlined, ShoppingCartOutlined, EditOutlined } from "@ant-design/icons";
+import { Alert, Card, Input, Button, Table, Radio, message, Tag, Typography, Space, Statistic, List, InputNumber, Steps, Skeleton, Tooltip } from "antd";
+import { SearchOutlined, ShoppingCartOutlined, EditOutlined, AppstoreOutlined } from "@ant-design/icons";
 import { searchClients } from "../api/clients";
 import { getParcels } from "../api/parcels";
 import { getActiveTariffs } from "../api/tariffs";
@@ -128,6 +128,68 @@ export default function Issuance() {
     return +Math.max(byKg, byM3).toFixed(2);
   }, [tariffByMethod, effectiveWeight, effectiveVolume]);
 
+  // Партии (intake_group_id !== null) выдаются атомарно: посылки одной
+  // партии сортируются подряд, выбираются вместе, в шапке колонки «Партия»
+  // объединяются через rowSpan.
+  const groupSiblings = useMemo(() => {
+    const map = new Map<number, number[]>();
+    for (const p of parcels) {
+      if (p.intake_group_id == null) continue;
+      const arr = map.get(p.intake_group_id) || [];
+      arr.push(p.id);
+      map.set(p.intake_group_id, arr);
+    }
+    return map;
+  }, [parcels]);
+
+  const groupNumber = useMemo(() => {
+    const map = new Map<number, number>();
+    let i = 0;
+    for (const p of parcels) {
+      if (p.intake_group_id == null) continue;
+      if (!map.has(p.intake_group_id)) {
+        i += 1;
+        map.set(p.intake_group_id, i);
+      }
+    }
+    return map;
+  }, [parcels]);
+
+  const sortedParcels = useMemo(() => {
+    const arr = [...parcels];
+    arr.sort((a, b) => {
+      const ga = a.intake_group_id ?? Number.POSITIVE_INFINITY;
+      const gb = b.intake_group_id ?? Number.POSITIVE_INFINITY;
+      if (ga !== gb) return ga - gb;
+      return a.id - b.id;
+    });
+    return arr;
+  }, [parcels]);
+
+  const handleSelectionChange = useCallback((keys: React.Key[]) => {
+    const next = new Set<number>(keys.map((k) => Number(k)));
+    const prev = new Set<number>(selected);
+    const added = [...next].filter((k) => !prev.has(k));
+    const removed = [...prev].filter((k) => !next.has(k));
+    const result = new Set<number>(next);
+    for (const id of added) {
+      const p = parcels.find((x) => x.id === id);
+      if (!p?.intake_group_id) continue;
+      for (const sib of groupSiblings.get(p.intake_group_id) || []) result.add(sib);
+    }
+    for (const id of removed) {
+      const p = parcels.find((x) => x.id === id);
+      if (!p?.intake_group_id) continue;
+      for (const sib of groupSiblings.get(p.intake_group_id) || []) result.delete(sib);
+    }
+    setSelected([...result]);
+  }, [parcels, selected, groupSiblings]);
+
+  const groupColor = (gid: number) => {
+    const palette = ["#E8F5E9", "#E3F2FD", "#FFF3E0", "#F3E5F5", "#FBE9E7", "#E0F7FA"];
+    return palette[((gid - 1) % palette.length + palette.length) % palette.length];
+  };
+
   const selectedParcels = useMemo(
     () => parcels.filter((p) => selected.includes(p.id)),
     [parcels, selected],
@@ -167,6 +229,30 @@ export default function Issuance() {
   const currentStep = !client ? 0 : selected.length === 0 ? 1 : 2;
 
   const parcelColumns = useMemo(() => [
+    {
+      title: "Партия",
+      width: 110,
+      onCell: (r: any) => {
+        if (r.intake_group_id == null) return { rowSpan: 1 };
+        const sibs = groupSiblings.get(r.intake_group_id) || [];
+        const firstId = sibs[0];
+        return r.id === firstId
+          ? { rowSpan: sibs.length, style: { background: groupColor(groupNumber.get(r.intake_group_id) || 0), verticalAlign: "middle", textAlign: "center" as const } }
+          : { rowSpan: 0 };
+      },
+      render: (_: any, r: any) => {
+        if (r.intake_group_id == null) return <span style={{ color: "var(--c-text-muted)" }}>—</span>;
+        const num = groupNumber.get(r.intake_group_id);
+        const sibs = groupSiblings.get(r.intake_group_id) || [];
+        return (
+          <Tooltip title={`Партия выдаётся целиком — ${sibs.length} трек-кодов`}>
+            <Tag color="processing" style={{ borderRadius: 12, padding: "2px 10px", fontWeight: 600 }}>
+              <AppstoreOutlined /> №{num} · {sibs.length} шт.
+            </Tag>
+          </Tooltip>
+        );
+      },
+    },
     {
       title: "Трек",
       dataIndex: "track_id",
@@ -336,7 +422,7 @@ export default function Issuance() {
         );
       },
     },
-  ], [customPrices, editingPrice, calcAmount, handleResetPrice, weightOverrides, volumeOverrides, editingWeight, editingVolume, effectiveWeight, effectiveVolume]);
+  ], [customPrices, editingPrice, calcAmount, handleResetPrice, weightOverrides, volumeOverrides, editingWeight, editingVolume, effectiveWeight, effectiveVolume, groupSiblings, groupNumber]);
 
   const handleIssue = async () => {
     if (issueBlocked) {
@@ -531,14 +617,15 @@ export default function Issuance() {
             }
           >
             <Table
-              dataSource={parcels}
+              dataSource={sortedParcels}
               rowKey="id"
               size="small"
               pagination={false}
               rowSelection={{
                 selectedRowKeys: selected,
-                onChange: (keys) => setSelected(keys as number[]),
+                onChange: handleSelectionChange,
               }}
+              rowClassName={(r) => (r.intake_group_id != null ? "issuance-group-row" : "")}
               columns={parcelColumns}
             />
 

@@ -10,6 +10,7 @@ from sqlalchemy.orm import joinedload
 
 from app.database import get_db
 from app.models.client import Client
+from app.models.intake_group import IntakeGroup
 from app.models.issuance import IssuanceItem, IssuanceOrder
 from app.models.parcel_china import ParcelChina
 from app.models.parcel_dushanbe import ParcelDushanbe
@@ -290,6 +291,7 @@ async def add_dushanbe_bulk(
     unresolved_list: list[str] = []
     duplicates: list[str] = []
     seen: set[str] = set()
+    candidate_parcels: list[dict] = []
 
     for raw in body.track_ids:
         track = normalize_track(raw)
@@ -325,19 +327,47 @@ async def add_dushanbe_bulk(
             .where(ParcelChina.track_id == track)
         )).scalar_one_or_none() is not None
 
-        db.add(ParcelDushanbe(
-            track_id=track,
+        candidate_parcels.append({"track": track, "has_china": has_china})
+        seen.add(track)
+
+    # Партия = >=2 посылок одного клиента. Группа хранит общий вес/объём,
+    # weight_kg/volume_m3 в каждой посылке = доля от общего (для сумм/статистики).
+    group: IntakeGroup | None = None
+    if client is not None and len(candidate_parcels) >= 2:
+        group = IntakeGroup(
             client_id=client.id,
+            delivery_method=body.delivery_method,
             weight_kg=body.weight_kg,
             volume_m3=body.volume_m3,
+            comment=body.comment,
+            shelf=(body.shelf or "").strip() or None,
+            created_by=current_user.id,
+        )
+        db.add(group)
+        await db.flush()
+
+    n = len(candidate_parcels)
+    if group is not None and n > 0:
+        per_weight = (body.weight_kg / n) if body.weight_kg is not None else None
+        per_volume = (body.volume_m3 / n) if body.volume_m3 is not None else None
+    else:
+        per_weight = body.weight_kg
+        per_volume = body.volume_m3
+
+    for cp in candidate_parcels:
+        db.add(ParcelDushanbe(
+            track_id=cp["track"],
+            client_id=client.id,
+            weight_kg=per_weight,
+            volume_m3=per_volume,
             delivery_method=body.delivery_method,
             comment=body.comment,
             shelf=(body.shelf or "").strip() or None,
-            has_china_registration=has_china,
+            has_china_registration=cp["has_china"],
+            intake_group_id=group.id if group is not None else None,
             created_by=current_user.id,
         ))
-        seen.add(track)
-        added.append(track)
+        added.append(cp["track"])
 
     if added or unresolved_list:
         await log_action(

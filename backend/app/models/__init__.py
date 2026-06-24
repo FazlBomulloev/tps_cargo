@@ -10,6 +10,7 @@ from app.models.notification import NotificationLog
 from app.models.audit import AuditLog
 from app.models.setting import Setting
 from app.models.expense import Expense
+from app.models.intake_group import IntakeGroup
 
 __all__ = [
     "Client",
@@ -25,4 +26,5 @@ __all__ = [
     "AuditLog",
     "Setting",
     "Expense",
+    "IntakeGroup",
 ]

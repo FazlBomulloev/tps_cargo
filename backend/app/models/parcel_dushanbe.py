@@ -33,6 +33,9 @@ class ParcelDushanbe(Base):
     warehouse_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("warehouses.id"), nullable=True
     )
+    intake_group_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("intake_groups.id"), nullable=True
+    )
     amount_due: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     # IN-25: старое поле — только price_per_kg, оставлено для совместимости.
     tariff_snapshot: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
@@ -66,6 +69,7 @@ class ParcelDushanbe(Base):
         Index("ix_parcels_dushanbe_status", "status"),
         Index("ix_parcels_dushanbe_created_at", "created_at"),
         Index("ix_parcels_dushanbe_delivery_method", "delivery_method"),
+        Index("ix_parcels_dushanbe_intake_group_id", "intake_group_id"),
         # Partial index ix_parcels_dushanbe_notified_pending создаётся
         # сырым SQL в миграции indexes_perf (WHERE notified_at IS NULL
         # AND is_deleted = false) — Alembic autogenerate его не увидит.

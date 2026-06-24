@@ -6,6 +6,7 @@ import api from "../api/client";
 import { getParcel, updateParcelStatus } from "../api/parcels";
 import type { ParcelStatus } from "../types/api";
 import { PageHeader, StatusTag, MethodTag, TrackChip, MoneyCell, WeightCell, EmptyState } from "../components/ui";
+import { formatDateTimeRu } from "../utils/format";
 
 const statusLabels: Record<string, string> = {
   received_dushanbe: "В Душанбе",
@@ -158,7 +159,7 @@ export default function ParcelDetail() {
               contentStyle={{ background: "#fff" }}
             >
               <Descriptions.Item label="Дата выдачи">
-                {new Date(issuance.issued_at).toLocaleString("ru-RU")}
+                {formatDateTimeRu(issuance.issued_at)}
               </Descriptions.Item>
               <Descriptions.Item label="Оплата">
                 <Tag color={issuance.payment_status === "paid" ? "success" : "error"}>

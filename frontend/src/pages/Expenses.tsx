@@ -17,6 +17,7 @@ import { useAuthStore } from "../store/authStore";
 import { createExpense, deleteExpense, getExpenses } from "../api/expenses";
 import type { DeliveryMethod } from "../types/api";
 import { PageHeader, MethodTag } from "../components/ui";
+import { formatDateTimeRu } from "../utils/format";
 
 export default function Expenses() {
   const [form] = Form.useForm();
@@ -178,8 +179,7 @@ export default function Expenses() {
                 title: "Дата",
                 dataIndex: "created_at",
                 width: 160,
-                render: (v: string) =>
-                  v ? new Date(v).toLocaleString("ru-RU") : "—",
+                render: (v: string) => formatDateTimeRu(v),
               },
               {
                 title: "Категория",

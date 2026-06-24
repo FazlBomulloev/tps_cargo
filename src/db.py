@@ -411,6 +411,7 @@ async def get_parcels_by_client(
                 "amount_estimated": est,
                 "issued_at": issued_at,
                 "shelf": p.shelf,
+                "intake_group_id": p.intake_group_id,
             })
         return items
 
