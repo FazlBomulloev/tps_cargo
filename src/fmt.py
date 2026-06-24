@@ -86,7 +86,7 @@ def fmt_parcel_arrived(
 
 def fmt_track_result_client(
     track_code: str,
-    in_china: bool,
+    in_china,
     dushanbe_info,
     lang: str = "ru",
     unresolved_info: dict | None = None,
@@ -114,6 +114,18 @@ def fmt_track_result_client(
             lines.append(
                 "│ "
                 + get_text("track_can_pickup", lang)
+            )
+        if in_china:
+            lines.append(
+                "│   "
+                f"{get_text('parcel_field_china', lang)}: "
+                f"{_format_date(in_china)}"
+            )
+        if getattr(dushanbe_info, "created_at", None):
+            lines.append(
+                "│   "
+                f"{get_text('parcel_field_arrived', lang)}: "
+                f"{_format_date(dushanbe_info.created_at)}"
             )
     elif unresolved_info:
         lines.append(
@@ -148,6 +160,11 @@ def fmt_track_result_client(
         lines.append(
             "│ "
             + get_text("track_wait_delivery", lang)
+        )
+        lines.append(
+            "│   "
+            f"{get_text('parcel_field_china', lang)}: "
+            f"{_format_date(in_china)}"
         )
     else:
         lines.append(

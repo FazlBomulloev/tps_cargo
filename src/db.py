@@ -219,16 +219,17 @@ async def get_client_by_tps_code(
 
 # ── Parcels China ──
 
-async def find_in_china(track: str) -> bool:
+async def find_in_china(track: str):
+    """Возвращает datetime принятия в Китае или None."""
     code = normalize_track(track)
     async with async_session() as s:
         result = await s.execute(
-            select(ParcelChina).where(
+            select(ParcelChina.created_at).where(
                 ParcelChina.track_id == code,
                 ParcelChina.is_deleted.is_(False),
             )
         )
-        return result.scalar_one_or_none() is not None
+        return result.scalar_one_or_none()
 
 
 # ── Parcels Dushanbe ──

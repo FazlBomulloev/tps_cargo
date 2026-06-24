@@ -190,6 +190,20 @@ export default function Issuance() {
     return palette[((gid - 1) % palette.length + palette.length) % palette.length];
   };
 
+  const groupCellMeta = useCallback((r: any) => {
+    if (r.intake_group_id == null) return { rowSpan: 1 as number };
+    const sibs = groupSiblings.get(r.intake_group_id) || [];
+    const firstId = sibs[0];
+    return r.id === firstId
+      ? { rowSpan: sibs.length, style: { background: groupColor(groupNumber.get(r.intake_group_id) || 0), verticalAlign: "middle" as const } }
+      : { rowSpan: 0 };
+  }, [groupSiblings, groupNumber]);
+
+  const groupParcels = useCallback((gid: number) => {
+    const ids = groupSiblings.get(gid) || [];
+    return parcels.filter((p) => ids.includes(p.id));
+  }, [parcels, groupSiblings]);
+
   const selectedParcels = useMemo(
     () => parcels.filter((p) => selected.includes(p.id)),
     [parcels, selected],
@@ -264,44 +278,47 @@ export default function Issuance() {
           <span>Вес <EditOutlined style={{ fontSize: 11, opacity: 0.6, marginLeft: 4 }} /></span>
         </Tooltip>
       ),
+      onCell: groupCellMeta,
       render: (_: any, r: any) => {
-        const isOverride = r.id in weightOverrides;
-        const w = effectiveWeight(r);
+        const isGroup = r.intake_group_id != null;
+        const members = isGroup ? groupParcels(r.intake_group_id) : [r];
+        const totalW = members.reduce((s, p) => s + effectiveWeight(p), 0);
+        const anyOverride = members.some((p) => p.id in weightOverrides);
         if (editingWeight === r.id) {
           return (
             <InputNumber
-              autoFocus
-              size="small"
-              min={0}
-              step={0.1}
-              precision={3}
-              decimalSeparator="."
-              value={w}
+              autoFocus size="small" min={0} step={0.1} precision={3}
+              decimalSeparator="." value={totalW}
               onChange={(v) => {
-                if (v != null) setWeightOverrides({ ...weightOverrides, [r.id]: Number(v) });
+                if (v == null) return;
+                const total = Number(v);
+                const n = members.length;
+                const per = n > 0 ? total / n : 0;
+                const next = { ...weightOverrides };
+                for (const p of members) next[p.id] = per;
+                setWeightOverrides(next);
               }}
               onBlur={() => setEditingWeight(null)}
               onPressEnter={() => setEditingWeight(null)}
-              style={{ width: 100 }}
-              addonAfter="кг"
+              style={{ width: 110 }} addonAfter="кг"
             />
           );
         }
-        const missing = w <= 0;
+        const missing = totalW <= 0;
         return (
           <span
             onClick={() => setEditingWeight(r.id)}
             style={{
-              cursor: "pointer",
-              padding: "2px 8px",
-              borderRadius: 4,
-              background: missing ? "var(--c-error-soft)" : (isOverride ? "var(--c-warning-soft)" : "transparent"),
-              color: missing ? "var(--c-error)" : (isOverride ? "var(--c-warning)" : "var(--c-text)"),
-              borderBottom: missing || isOverride ? "none" : "1px dashed var(--c-text-muted)",
+              cursor: "pointer", padding: "2px 8px", borderRadius: 4,
+              background: missing ? "var(--c-error-soft)" : (anyOverride ? "var(--c-warning-soft)" : "transparent"),
+              color: missing ? "var(--c-error)" : (anyOverride ? "var(--c-warning)" : "var(--c-text)"),
+              borderBottom: missing || anyOverride ? "none" : "1px dashed var(--c-text-muted)",
               fontVariantNumeric: "tabular-nums",
             }}
           >
-            {missing ? "—" : <WeightCell value={w} />} <EditOutlined style={{ fontSize: 10, opacity: 0.5 }} />
+            {missing ? "—" : <WeightCell value={totalW} />}
+            {isGroup && !missing && <span style={{ opacity: 0.6, marginLeft: 4 }}>(общий)</span>}
+            <EditOutlined style={{ fontSize: 10, opacity: 0.5, marginLeft: 4 }} />
           </span>
         );
       },
@@ -312,44 +329,47 @@ export default function Issuance() {
           <span>Объём <EditOutlined style={{ fontSize: 11, opacity: 0.6, marginLeft: 4 }} /></span>
         </Tooltip>
       ),
+      onCell: groupCellMeta,
       render: (_: any, r: any) => {
-        const isOverride = r.id in volumeOverrides;
-        const v = effectiveVolume(r);
+        const isGroup = r.intake_group_id != null;
+        const members = isGroup ? groupParcels(r.intake_group_id) : [r];
+        const totalV = members.reduce((s, p) => s + effectiveVolume(p), 0);
+        const anyOverride = members.some((p) => p.id in volumeOverrides);
         if (editingVolume === r.id) {
           return (
             <InputNumber
-              autoFocus
-              size="small"
-              min={0}
-              step={0.01}
-              precision={4}
-              decimalSeparator="."
-              value={v}
+              autoFocus size="small" min={0} step={0.01} precision={4}
+              decimalSeparator="." value={totalV}
               onChange={(val) => {
-                if (val != null) setVolumeOverrides({ ...volumeOverrides, [r.id]: Number(val) });
+                if (val == null) return;
+                const total = Number(val);
+                const n = members.length;
+                const per = n > 0 ? total / n : 0;
+                const next = { ...volumeOverrides };
+                for (const p of members) next[p.id] = per;
+                setVolumeOverrides(next);
               }}
               onBlur={() => setEditingVolume(null)}
               onPressEnter={() => setEditingVolume(null)}
-              style={{ width: 100 }}
-              addonAfter="м³"
+              style={{ width: 110 }} addonAfter="м³"
             />
           );
         }
-        const truckMissing = r.delivery_method === "truck" && v <= 0;
+        const truckMissing = r.delivery_method === "truck" && totalV <= 0;
         return (
           <span
             onClick={() => setEditingVolume(r.id)}
             style={{
-              cursor: "pointer",
-              padding: "2px 8px",
-              borderRadius: 4,
-              background: truckMissing ? "var(--c-error-soft)" : (isOverride ? "var(--c-warning-soft)" : "transparent"),
-              color: truckMissing ? "var(--c-error)" : (isOverride ? "var(--c-warning)" : "var(--c-text)"),
-              borderBottom: truckMissing || isOverride ? "none" : "1px dashed var(--c-text-muted)",
+              cursor: "pointer", padding: "2px 8px", borderRadius: 4,
+              background: truckMissing ? "var(--c-error-soft)" : (anyOverride ? "var(--c-warning-soft)" : "transparent"),
+              color: truckMissing ? "var(--c-error)" : (anyOverride ? "var(--c-warning)" : "var(--c-text)"),
+              borderBottom: truckMissing || anyOverride ? "none" : "1px dashed var(--c-text-muted)",
               fontVariantNumeric: "tabular-nums",
             }}
           >
-            {v > 0 ? `${v} м³` : "—"} <EditOutlined style={{ fontSize: 10, opacity: 0.5 }} />
+            {totalV > 0 ? `${totalV} м³` : "—"}
+            {isGroup && totalV > 0 && <span style={{ opacity: 0.6, marginLeft: 4 }}>(общий)</span>}
+            <EditOutlined style={{ fontSize: 10, opacity: 0.5, marginLeft: 4 }} />
           </span>
         );
       },
@@ -357,6 +377,7 @@ export default function Issuance() {
     {
       title: "Метод",
       dataIndex: "delivery_method",
+      onCell: groupCellMeta,
       render: (v: "avia" | "truck") => <MethodTag method={v} />,
     },
     {
@@ -365,26 +386,32 @@ export default function Issuance() {
           <span>Сумма <EditOutlined style={{ fontSize: 11, opacity: 0.6, marginLeft: 4 }} /></span>
         </Tooltip>
       ),
+      onCell: groupCellMeta,
       render: (_: any, r: any) => {
-        const isCustom = r.id in customPrices;
-        const amount = isCustom ? customPrices[r.id] : calcAmount(r);
+        const isGroup = r.intake_group_id != null;
+        const members = isGroup ? groupParcels(r.intake_group_id) : [r];
+        const totalAmount = members.reduce(
+          (s, p) => s + (p.id in customPrices ? customPrices[p.id] : calcAmount(p)),
+          0,
+        );
+        const anyCustom = members.some((p) => p.id in customPrices);
         if (editingPrice === r.id) {
           return (
             <InputNumber
-              autoFocus
-              size="small"
-              min={0}
-              step={0.01}
-              precision={2}
-              decimalSeparator="."
-              value={amount}
+              autoFocus size="small" min={0} step={0.01} precision={2}
+              decimalSeparator="." value={totalAmount}
               onChange={(v) => {
-                if (v != null) setCustomPrices({ ...customPrices, [r.id]: Number(v) });
+                if (v == null) return;
+                const total = Number(v);
+                const n = members.length;
+                const per = n > 0 ? total / n : 0;
+                const next = { ...customPrices };
+                for (const p of members) next[p.id] = per;
+                setCustomPrices(next);
               }}
               onBlur={() => setEditingPrice(null)}
               onPressEnter={() => setEditingPrice(null)}
-              style={{ width: 120 }}
-              addonAfter="TJS"
+              style={{ width: 130 }} addonAfter="TJS"
             />
           );
         }
@@ -399,21 +426,24 @@ export default function Issuance() {
                   cursor: "pointer",
                   padding: "2px 8px",
                   borderRadius: 4,
-                  background: isCustom ? "var(--c-warning-soft)" : "transparent",
-                  color: isCustom ? "var(--c-warning)" : "var(--c-text)",
-                  borderBottom: isCustom ? "none" : "1px dashed var(--c-text-muted)",
+                  background: anyCustom ? "var(--c-warning-soft)" : "transparent",
+                  color: anyCustom ? "var(--c-warning)" : "var(--c-text)",
+                  borderBottom: anyCustom ? "none" : "1px dashed var(--c-text-muted)",
                   display: "inline-flex",
                   alignItems: "center",
                   gap: 6,
                 }}
               >
-                {amount.toFixed(2)} TJS
+                {totalAmount.toFixed(2)} TJS
+                {isGroup && <span style={{ opacity: 0.6, marginLeft: 4 }}>(общий)</span>}
                 <EditOutlined style={{ fontSize: 10, opacity: 0.5 }} />
               </span>
             </Tooltip>
-            {isCustom && (
+            {anyCustom && (
               <Tooltip title="Вернуть расчётную цену по тарифу">
-                <Button size="small" type="link" onClick={() => handleResetPrice(r.id)} style={{ padding: "0 4px" }}>
+                <Button size="small" type="link" onClick={() => {
+                  for (const p of members) handleResetPrice(p.id);
+                }} style={{ padding: "0 4px" }}>
                   Сбросить
                 </Button>
               </Tooltip>
@@ -422,7 +452,7 @@ export default function Issuance() {
         );
       },
     },
-  ], [customPrices, editingPrice, calcAmount, handleResetPrice, weightOverrides, volumeOverrides, editingWeight, editingVolume, effectiveWeight, effectiveVolume, groupSiblings, groupNumber]);
+  ], [customPrices, editingPrice, calcAmount, handleResetPrice, weightOverrides, volumeOverrides, editingWeight, editingVolume, effectiveWeight, effectiveVolume, groupSiblings, groupNumber, groupCellMeta, groupParcels]);
 
   const handleIssue = async () => {
     if (issueBlocked) {
