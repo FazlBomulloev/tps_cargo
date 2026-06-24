@@ -1,1 +1,0 @@
-import{by as r}from"./index-B5FvC2Fi.js";import{T as c}from"./index-B7hC92uG.js";import{a as t,R as l}from"./SendOutlined-MLBL-Yf5.js";const n={avia:{label:"Авиа",icon:r.jsx(l,{}),color:"default"},truck:{label:"Фура",icon:r.jsx(t,{}),color:"default"}};function f({method:a}){const o=n[a];return r.jsx(c,{color:o.color,icon:o.icon,children:o.label})}export{f as M};

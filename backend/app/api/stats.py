@@ -243,6 +243,41 @@ async def overview(
     for m, s in unresolved_weight_rows:
         weight_by_method[m] = weight_by_method.get(m, 0.0) + float(s)
 
+    # Текущий остаток на складе Душанбе (НЕ за период) — не выданные,
+    # не удалённые посылки + неопознанные. Партии: вес у каждой посылки
+    # = доля, поэтому SUM корректен. Раскладка по avia/truck.
+    wh_rows = (await db.execute(
+        select(
+            ParcelDushanbe.delivery_method,
+            func.coalesce(func.sum(ParcelDushanbe.weight_kg), 0),
+        )
+        .where(
+            ParcelDushanbe.status == "received_dushanbe",
+            ParcelDushanbe.is_deleted.is_(False),
+        )
+        .group_by(ParcelDushanbe.delivery_method)
+    )).all()
+    warehouse_weight_by_method: dict[str, float] = {
+        m: float(s) for m, s in wh_rows
+    }
+    wh_unr_rows = (await db.execute(
+        select(
+            UnresolvedParcel.delivery_method,
+            func.coalesce(func.sum(UnresolvedParcel.weight_kg), 0),
+        )
+        .where(
+            UnresolvedParcel.resolved.is_(False),
+            UnresolvedParcel.is_deleted.is_(False),
+            UnresolvedParcel.delivery_method.isnot(None),
+        )
+        .group_by(UnresolvedParcel.delivery_method)
+    )).all()
+    for m, s in wh_unr_rows:
+        warehouse_weight_by_method[m] = (
+            warehouse_weight_by_method.get(m, 0.0) + float(s)
+        )
+    warehouse_weight = sum(warehouse_weight_by_method.values())
+
     return {
         "china_count": china_count,
         "dushanbe_count": dushanbe_count,
@@ -256,6 +291,8 @@ async def overview(
         "total_expenses": total_expenses,
         "expense_by_category": expense_by_category,
         "new_clients": new_clients,
+        "warehouse_weight": warehouse_weight,
+        "warehouse_weight_by_method": warehouse_weight_by_method,
         "revenue_by_method": revenue_by_method,
         "gross_revenue_by_method": gross_revenue_by_method,
         "net_revenue_by_method": net_revenue_by_method,

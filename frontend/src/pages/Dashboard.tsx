@@ -180,6 +180,14 @@ export default function Dashboard() {
       popover: methodBreakdown(overview.weight_by_method, fmtKg),
     },
     {
+      title: "На складе Душанбе",
+      value: <WeightCell value={overview.warehouse_weight ?? 0} />,
+      icon: <InboxOutlined />,
+      accent: "info",
+      popoverTitle: "По методу доставки",
+      popover: methodBreakdown(overview.warehouse_weight_by_method, fmtKg),
+    },
+    {
       title: "Новых клиентов",
       value: overview.new_clients ?? 0,
       icon: <UserAddOutlined />,
